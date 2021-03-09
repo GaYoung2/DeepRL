@@ -197,7 +197,7 @@ class DistributedAgent():
                 actions.append(next_state)
         # action수가 너무 적을경우, 그 회차의 학습을 진행하지 않음. #added 2021-03-09 by kang
         if len(actions) < 10:
-            return self.__experiences, 0
+            return self.__experiences, 0, 0
 
         is_not_terminal = [1 for i in range(0, len(actions)-1, 1)]
         is_not_terminal.append(0)
