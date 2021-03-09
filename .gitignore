@@ -2,6 +2,9 @@
 # Created by https://www.toptal.com/developers/gitignore/api/python,vscode
 # Edit at https://www.toptal.com/developers/gitignore?templates=python,vscode
 
+### json Folder ###
+data/checkpoint/
+
 ### Python ###
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -144,7 +147,7 @@ dmypy.json
 
 ### vscode ###
 .vscode/*
-!.vscode/settings.json
+.vscode/settings.json
 !.vscode/tasks.json
 !.vscode/launch.json
 !.vscode/extensions.json
