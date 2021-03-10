@@ -305,7 +305,7 @@ class DistributedAgent():
                     f.write(checkpoint_str)
                 self.__best_model = self.__model
                 self.__best_experiences = self.__experiences
-                
+
             # for test store best policy
             # elif self.__num_of_trial > 10:
             #     print("="*30)
@@ -325,7 +325,7 @@ class DistributedAgent():
         # If the car has collided, the reward is always zero
         # 충돌 시 reward를 음수로 줘보았음.
         if (collision_info.has_collided):
-            return -0.5, True
+            return 0.0, True
         
         # If the car is stopped, the reward is always zero
         speed = car_state.speed

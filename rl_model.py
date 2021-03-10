@@ -198,5 +198,5 @@ class RlModel():
     # Gets a random state
     # Used during annealing
     def get_random_state(self):
-        #return np.random.choice(5, 1)[0]
-        return np.random.randint(low=0, high=(self.__nb_actions) - 1)
+        return np.random.choice(5, 1)[0]
+        #return np.random.randint(low=0, high=(self.__nb_actions) - 1)
