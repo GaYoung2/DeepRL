@@ -290,8 +290,7 @@ class DistributedAgent():
                 print("New Best Policy!!!!!!")
                 print("="*30)
                 self.__best_drive = drive_time
-                bestpoint_dir = os.path.join(os.path.join('D:\Share', 'bestpoint'), self.__experiment_name)
-
+                bestpoint_dir = os.path.join(os.path.join(self.__data_dir, 'bestpoint'), self.__experiment_name)
                 if not os.path.isdir(bestpoint_dir):
                     try:
                         os.makedirs(bestpoint_dir)
@@ -324,7 +323,11 @@ class DistributedAgent():
         # If the car has collided, the reward is always zero
         # 충돌 시 reward를 음수로 줘보았음.
         if (collision_info.has_collided):
+<<<<<<< HEAD
             return -10, True
+=======
+            return -0.5, True
+>>>>>>> 714800e7261b6c5f0e8c16e7e0f23841a4c9082f
         
         # If the car is stopped, the reward is always zero
         speed = car_state.speed
@@ -402,10 +405,11 @@ class DistributedAgent():
         
         # Pick a random position on the road. 
         # Do not start too close to either end, as the car may crash during the initial run.
-        random_interp = (np.random.random_sample() * 0.4) + 0.3
+        
+        random_interp = 0.15    # changed by GY 21-03-10
         
         # Pick a random direction to face
-        random_direction_interp = np.random.random_sample()
+        random_direction_interp = 0.4 # changed by GY 21-03-10
 
         # Compute the starting point of the car
         random_line = self.__road_points[random_line_index]
