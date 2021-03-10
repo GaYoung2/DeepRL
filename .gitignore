@@ -4,6 +4,7 @@
 
 ### json Folder ###
 data/checkpoint/
+data/bestpoint/
 
 ### Python ###
 # Byte-compiled / optimized / DLL files
