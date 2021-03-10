@@ -402,10 +402,11 @@ class DistributedAgent():
         
         # Pick a random position on the road. 
         # Do not start too close to either end, as the car may crash during the initial run.
-        random_interp = (np.random.random_sample() * 0.4) + 0.3
+        
+        random_interp = 0.15    # changed by GY 21-03-10
         
         # Pick a random direction to face
-        random_direction_interp = np.random.random_sample()
+        random_direction_interp = 0.4 # changed by GY 21-03-10
 
         # Compute the starting point of the car
         random_line = self.__road_points[random_line_index]
