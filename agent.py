@@ -305,15 +305,16 @@ class DistributedAgent():
                     f.write(checkpoint_str)
                 self.__best_model = self.__model
                 self.__best_experiences = self.__experiences
-
-            elif self.__num_of_trial > 10:
-                print("="*30)
-                print("Reload best Model")
-                print("="*30)
-                self.__model = self.__best_model
-                self.__experiences = self.__best_experiences
-                self.__num_of_trial = 0
-            self.__num_of_trial += 1
+                
+            # for test store best policy
+            # elif self.__num_of_trial > 10:
+            #     print("="*30)
+            #     print("Reload best Model")
+            #     print("="*30)
+            #     self.__model = self.__best_model
+            #     self.__experiences = self.__best_experiences
+            #     self.__num_of_trial = 0
+            # self.__num_of_trial += 1
 
     def __compute_reward(self, collision_info, car_state):
         #Define some constant parameters for the reward function
