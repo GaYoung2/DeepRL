@@ -291,7 +291,6 @@ class DistributedAgent():
                 print("="*30)
                 self.__best_drive = drive_time
                 bestpoint_dir = os.path.join(os.path.join(self.__data_dir, 'bestpoint'), self.__experiment_name)
-
                 if not os.path.isdir(bestpoint_dir):
                     try:
                         os.makedirs(bestpoint_dir)
@@ -324,7 +323,11 @@ class DistributedAgent():
         # If the car has collided, the reward is always zero
         # 충돌 시 reward를 음수로 줘보았음.
         if (collision_info.has_collided):
+<<<<<<< HEAD
+            return -10, True
+=======
             return -0.5, True
+>>>>>>> 714800e7261b6c5f0e8c16e7e0f23841a4c9082f
         
         # If the car is stopped, the reward is always zero
         speed = car_state.speed
