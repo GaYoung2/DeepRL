@@ -1,5 +1,5 @@
-from Share.scripts_downpour.app.airsim_client import *
-from Share.scripts_downpour.app.rl_model import RlModel
+from airsim_client import *
+from rl_model import RlModel
 import numpy as np
 import time
 import sys
@@ -7,9 +7,11 @@ import json
 import PIL
 import PIL.ImageFilter
 import datetime
-MODEL_FILENAME = 'D:\data\checkpoint\local_run/16927.json' #Your model goes here
-#MODEL_FILENAME = 'sample_model.json' #Your model goes here
+import cv2
 
+#MODEL_FILENAME = 'sample_model.json' #Your model goes here
+# MODEL_FILENAME = 'D:\checkpoint\local_run/13893.json'
+MODEL_FILENAME = 'data/checkpoint/local_run/286238.json'
 model = RlModel(None, False)
 with open(MODEL_FILENAME, 'r') as f:
     checkpoint_data = json.loads(f.read())
@@ -26,8 +28,9 @@ def get_image(car_client):
     image_response = car_client.simGetImages([ImageRequest(0, AirSimImageType.Scene, False, False)])[0]
     image1d = np.frombuffer(image_response.image_data_uint8, dtype=np.uint8)
     image_rgba = image1d.reshape(image_response.height, image_response.width, 4)
-
-    return image_rgba[76:135,0:255,0:3].astype(float)
+    image_rgba = image_rgba[76:135,0:255,0:3].astype(float)
+    image_rgba = image_rgba.reshape(59, 255, 3)
+    return image_rgba
 
 def append_to_ring_buffer(item, buffer, buffer_size):
     if (len(buffer) >= buffer_size):
@@ -43,14 +46,26 @@ car_controls.steering = 0
 car_controls.throttle = 1
 car_controls.brake = 0
 car_client.setCarControls(car_controls)
-stop_run_time =datetime.datetime.now() + datetime.timedelta(seconds=2)
+stop_run_time =datetime.datetime.now() + datetime.timedelta(seconds=1.5)
 while(datetime.datetime.now() < stop_run_time):
     time.sleep(0.01)
-    state_buffer = append_to_ring_buffer(get_image(car_client), state_buffer, state_buffer_len)
-
+prev_steering = 0
+handle_dir = 'data/handle_image/'
+handles = {0 : cv2.cvtColor(cv2.imread(handle_dir+'0.png'), cv2.COLOR_BGR2GRAY),
+            20 : cv2.cvtColor(cv2.imread(handle_dir+'right20.png'), cv2.COLOR_BGR2GRAY),
+            40 : cv2.cvtColor(cv2.imread(handle_dir+'right40.png'), cv2.COLOR_BGR2GRAY),
+            60 : cv2.cvtColor(cv2.imread(handle_dir+'right60.png'), cv2.COLOR_BGR2GRAY),
+            80 : cv2.cvtColor(cv2.imread(handle_dir+'right80.png'), cv2.COLOR_BGR2GRAY),
+            -20 : cv2.cvtColor(cv2.imread(handle_dir+'left20.png'), cv2.COLOR_BGR2GRAY),
+            -40 : cv2.cvtColor(cv2.imread(handle_dir+'left40.png'), cv2.COLOR_BGR2GRAY),
+            -60 : cv2.cvtColor(cv2.imread(handle_dir+'left60.png'), cv2.COLOR_BGR2GRAY),
+            -80 : cv2.cvtColor(cv2.imread(handle_dir+'left80.png'), cv2.COLOR_BGR2GRAY)}
 print('Running model')
 while(True):
-    state_buffer = append_to_ring_buffer(get_image(car_client), state_buffer, state_buffer_len)
+    state_buffer = get_image(car_client)
+    angle = -int(prev_steering/0.05*4)
+    pre_handle = handles[angle].reshape(59,255,1)
+    state_buffer = np.concatenate([state_buffer, pre_handle], axis=2)
     next_state, dummy = model.predict_state(state_buffer)
     next_control_signal = model.state_to_control_signals(next_state, car_client.getCarState())
 
