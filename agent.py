@@ -333,8 +333,11 @@ class DistributedAgent():
                 with open(file_name, 'w') as f:
                     print('Add Best Policy to {0}'.format(file_name))
                     f.write(checkpoint_str)
-                # 처음부터 시작할때 최근의 상태를 알기 위하여 pickle로 experiences, epsilon 저장.    
-                save_file = open(EXPERIENCE_FILENAME,'wb')
+                # 처음부터 시작할때 최근의 상태를 알기 위하여 pickle로 experiences, epsilon 저장.   
+                
+                # saving bestpoint model and experiences to saved_point folder
+                shutil.copyfile(os.path.join(os.path.join(os.path.join(self.__data_dir, 'bestpoint'), self.__experiment_name), sorted(os.listdir(os.path.join(os.path.join(self.__data_dir, 'bestpoint'), self.__experiment_name)))[-1]),    os.path.join(os.path.join(self.__data_dir, 'saved_point'), 'best_model.json'))
+                save_file = open(os.path.join(os.path.join(self.__data_dir, 'saved_point'), EXPERIENCE_FILENAME),'wb')
                 pkl.dump([self.__experiences, self.__epsilon], save_file)
                 save_file.close()
 
