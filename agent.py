@@ -181,24 +181,27 @@ class DistributedAgent():
                 angle = -int(self.prev_steering/0.05*4)
                 pre_handle = self.__handles[angle].reshape(59,255,1)
                 pre_state = np.concatenate([pre_state, pre_handle], axis=2)
+                print('prev_steering')
                 if (do_greedy < self.__epsilon or always_random):
                     num_random += 1
                     next_state = self.__model.get_random_state()
                     predicted_reward = 0
+                    print('Do random')
                 else:
                     next_state, predicted_reward = self.__model.predict_state(pre_state)
-                    print('Model predicts {0}'.format(next_state))
+                    print('Model predicts')
                 # Convert the selected state to a control signal
                 next_control_signals = self.__model.state_to_control_signals(next_state, self.__car_client.getCarState())
-
+                print('state : {0}'.format(next_state))
                 # Take the action
                 self.__car_controls.steering = self.prev_steering + next_control_signals[0]
+                print('prev {0} -> changed {1}'.format(self.prev_steering, self.__car_controls.steering))
                 if self.__car_controls.steering > 1.0:
                     self.__car_controls.steering = 1.0
                 elif self.__car_controls.steering < -1.0:
                     self.__car_controls.steering = -1.0
                 self.prev_steering = self.__car_controls.steering
-                print('change steering : ', self.prev_steering)
+                print('normalized steering : ', self.prev_steering)
                 self.__car_controls.throttle = next_control_signals[1]
                 self.__car_controls.brake = next_control_signals[2]
                 self.__car_client.setCarControls(self.__car_controls)
@@ -304,9 +307,10 @@ class DistributedAgent():
                         raise
                         
             file_name = os.path.join(checkpoint_dir,'{0}.json'.format(self.__num_batches_run)) 
-            with open(file_name, 'w') as f:
-                print('Checkpointing to {0}'.format(file_name))
-                f.write(checkpoint_str)
+            # Removed cuz waist of memory. by Kang 21-03-11
+            # with open(file_name, 'w') as f:
+            #     print('Checkpointing to {0}'.format(file_name))
+            #     f.write(checkpoint_str)
 
             self.__last_checkpoint_batch_count = self.__num_batches_run
             
@@ -338,7 +342,7 @@ class DistributedAgent():
                 self.__best_experiences = self.__experiences
                 self.__best_epsilon = self.__epsilon
 
-            elif self.__num_of_trial > 10:
+            elif self.__num_of_trial > 100:
                 print("="*30)
                 print("Reload best Model")
                 print("="*30)
@@ -350,7 +354,7 @@ class DistributedAgent():
 
     def __compute_reward(self, collision_info, car_state):
         #Define some constant parameters for the reward function
-        THRESH_DIST = 3.5                # The maximum distance from the center of the road to compute the reward function
+        THRESH_DIST = 4.0                # The maximum distance from the center of the road to compute the reward function
         DISTANCE_DECAY_RATE = 1.2        # The rate at which the reward decays for the distance function
         CENTER_SPEED_MULTIPLIER = 2.0    # The ratio at which we prefer the distance reward to the speed reward
 
@@ -486,12 +490,4 @@ class DistributedAgent():
                         -60 : cv2.cvtColor(cv2.imread(self.__handle_dir+'left60.png'), cv2.COLOR_BGR2GRAY),
                         -80 : cv2.cvtColor(cv2.imread(self.__handle_dir+'left80.png'), cv2.COLOR_BGR2GRAY)}
 agent = DistributedAgent()
-# 만약 메모리 에러로 죽을경우, saved_point에 best_policy와 pickle 파일 저장
-try:
-    agent.start()
-except:
-    print('saving best model....')
-    data_dir = 'data/'
-    exp_name = 'local_run'
-    shutil.copyfile(os.path.join(os.path.join(os.path.join(data_dir, 'bestpoint'), exp_name), sorted(os.listdir(os.path.join(os.path.join(data_dir, 'bestpoint'), exp_name)))[-1]),    os.path.join(os.path.join(data_dir, 'saved_point'), 'best_model.json'))
-    shutil.copyfile(EXPERIENCE_FILENAME, os.path.join(os.path.join(data_dir, 'saved_point'), EXPERIENCE_FILENAME))
+agent.start()
