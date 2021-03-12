@@ -55,6 +55,7 @@ class DistributedAgent():
         self.__best_model = None  #added 2021-03-09 by kang
         self.__best_epsilon = 1
         self.__num_of_trial = 0
+        self.__the_start_time = datetime.datetime.utcnow()
 
     def start(self):
         
@@ -164,6 +165,7 @@ class DistributedAgent():
             
             if (collision_info.has_collided or car_state.speed < 1 or utc_now > end_time or far_off):
                 print('Start time: {0}, end time: {1}'.format(start_time, utc_now), file=sys.stderr)
+                print('Time elapsed: {0}'.format(utc_now-self.__the_start_time))
                 self.__car_controls.steering = 0
                 self.__car_controls.throttle = 0
                 self.__car_controls.brake = 1
@@ -329,14 +331,15 @@ class DistributedAgent():
                         if e.errno != errno.EEXIST:
                             raise
                 file_name = os.path.join(bestpoint_dir,'{0}.json'.format(self.__num_batches_run)) 
-
+                saved_file_name = os.path.join(os.path.join(self.__data_dir, 'saved_point'), 'best_model.json')
                 with open(file_name, 'w') as f:
                     print('Add Best Policy to {0}'.format(file_name))
                     f.write(checkpoint_str)
+                # saving bestpoint model and experiences to saved_point folder by Kang 21-03-12
+                with open (saved_file_name, 'w') as f:
+                    f.write(checkpoint_str)
                 # 처음부터 시작할때 최근의 상태를 알기 위하여 pickle로 experiences, epsilon 저장.   
                 
-                # saving bestpoint model and experiences to saved_point folder
-                shutil.copyfile(os.path.join(os.path.join(os.path.join(self.__data_dir, 'bestpoint'), self.__experiment_name), sorted(os.listdir(os.path.join(os.path.join(self.__data_dir, 'bestpoint'), self.__experiment_name)))[-1]),    os.path.join(os.path.join(self.__data_dir, 'saved_point'), 'best_model.json'))
                 save_file = open(os.path.join(os.path.join(self.__data_dir, 'saved_point'), EXPERIENCE_FILENAME),'wb')
                 pkl.dump([self.__experiences, self.__epsilon], save_file)
                 save_file.close()
