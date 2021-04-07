@@ -9,7 +9,7 @@ import PIL.ImageFilter
 import datetime
 import cv2
 
-MODEL_FILENAME = 'data/checkpoint/local_run/286238.json'
+MODEL_FILENAME = 'data/bestpoint/local_run/497221.json'
 
 model = RlModel(None, False)
 with open(MODEL_FILENAME, 'r') as f:
@@ -100,7 +100,6 @@ car_controls.steering = 0
 car_controls.throttle = 1
 car_controls.brake = 0
 car_client.setCarControls(car_controls)
-time.sleep(1.5)
 prev_steering = 0
 handle_dir = 'data/handle_image/'
 handles = {0 : cv2.cvtColor(cv2.imread(handle_dir+'0.png'), cv2.COLOR_BGR2GRAY),
@@ -120,12 +119,7 @@ while(True):
     state_buffer = np.concatenate([state_buffer, pre_handle], axis=2)
     next_state, dummy = model.predict_state(state_buffer)
     next_control_signal = model.state_to_control_signals(next_state, car_client.getCarState())
-
-    car_controls.steering = prev_steering + next_control_signal[0]
-    if car_controls.steering > 1.0:
-        car_controls.steering = 1.0
-    elif car_controls.steering < -1.0:
-        car_controls.steering = -1.0
+    car_controls.steering = next_control_signal[0]
     prev_steering = car_controls.steering
     car_controls.throttle = next_control_signal[1]
     car_controls.brake = next_control_signal[2]

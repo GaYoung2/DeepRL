@@ -166,13 +166,8 @@ class DistributedAgent():
                 next_control_signals = self.__model.state_to_control_signals(next_state, self.__car_client.getCarState())
 
                 # Take the action
-                self.__car_controls.steering = self.prev_steering + next_control_signals[0]
-                if self.__car_controls.steering > 1.0:
-                    self.__car_controls.steering = 1.0
-                elif self.__car_controls.steering < -1.0:
-                    self.__car_controls.steering = -1.0
-                self.prev_steering = self.__car_controls.steering
-                print('change steering : ', self.prev_steering)
+                self.__car_controls.steering = next_control_signals[0]
+                self.prev_steering = next_control_signals[0]
                 self.__car_controls.throttle = next_control_signals[1]
                 self.__car_controls.brake = next_control_signals[2]
                 self.__car_client.setCarControls(self.__car_controls)
