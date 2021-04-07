@@ -1,4 +1,5 @@
 import os
+import shutil
 from time import sleep
 import cv2
 from rl_model import RlModel
@@ -6,7 +7,13 @@ from airsim_client import *
 import datetime
 import copy
 import json
+import pickle as pkl
 
+# for start from the model added by kang 21-03-10
+# MODEL_FILENAME = 'data/saved_point/best_model.json'
+MODEL_FILENAME = None
+random_respawn = True
+EXPERIENCE_FILENAME = 'latest.pkl'
 class DistributedAgent():
     def __init__(self):
         self.__model_buffer = None
@@ -46,25 +53,44 @@ class DistributedAgent():
         self.__init_handle_images()
         self.__best_drive = datetime.timedelta(seconds=-1)  #added 2021-03-09 by kang
         self.__best_model = None  #added 2021-03-09 by kang
+        self.__best_epsilon = 1
         self.__num_of_trial = 0
+        self.__the_start_time = datetime.datetime.utcnow()
 
     def start(self):
+        
         self.__run_function()
+        
 
     def __run_function(self):
         self.__model = RlModel(self.__weights_path, self.__train_conv_layers)
+        
+        # Read json model file from here by Kang 21-03-10
+        if MODEL_FILENAME != None:
+            with open(MODEL_FILENAME, 'r') as f:
+                checkpoint_data = json.loads(f.read())
+                self.__model.from_packet(checkpoint_data['model'])
+            print("Latest Model Loaded!")
+
+            # peakle을 이용해서 self.__experiences 불러오기
+            saved_file = open(os.path.join('data/saved_point/',EXPERIENCE_FILENAME), 'rb')
+            loaded_file = pkl.load(saved_file)
+            self.__experiences = loaded_file[0]
+            self.__epsilon = loaded_file[1]
+            saved_file.close()   
+
         self.__connect_to_airsim()
-        print('Filling replay memory...')
+        
         while True:
             print('Running Airsim Epoch.')
             try:
-                if self.__percent_full < 100:
-                    self.__run_airsim_epoch(True)
+                if self.__percent_full < 100 and MODEL_FILENAME == None:    # Model이 있을 경우에는 experiences와 epsilon을 불러오기 때문에 replay memory 채울필요 X
+                    print('Filling replay memory...')
+                    self.__run_airsim_epoch(MODEL_FILENAME == None)
                     self.__percent_full = 100.0 * len(self.__experiences['actions'])/self.__replay_memory_size
                     print('Replay memory now contains {0} members. ({1}% full)'.format(len(self.__experiences['actions']), self.__percent_full))
                 else:
                     if (self.__model is not None):
-                        print('Running Airsim Epoch.')
                         experiences, frame_count, drive_time = self.__run_airsim_epoch(False)
                         # If we didn't immediately crash, train on the gathered experiences
                         if (frame_count > 0):
@@ -111,6 +137,7 @@ class DistributedAgent():
         wait_delta_sec = 0.01
         self.__car_client.simSetPose(Pose(Vector3r(starting_points[0], starting_points[1], starting_points[2]), AirSimClientBase.toQuaternion(starting_direction[0], starting_direction[1], starting_direction[2])), True)
         self.__car_controls.steering = 0
+        time.sleep(1.5)
         self.__car_controls.throttle = 1
         self.__car_controls.brake = 0
         self.prev_steering = 0
@@ -138,6 +165,7 @@ class DistributedAgent():
             
             if (collision_info.has_collided or car_state.speed < 1 or utc_now > end_time or far_off):
                 print('Start time: {0}, end time: {1}'.format(start_time, utc_now), file=sys.stderr)
+                print('Time elapsed: {0}'.format(utc_now-self.__the_start_time))
                 self.__car_controls.steering = 0
                 self.__car_controls.throttle = 0
                 self.__car_controls.brake = 1
@@ -155,16 +183,18 @@ class DistributedAgent():
                 angle = -int(self.prev_steering/0.05*4)
                 pre_handle = self.__handles[angle].reshape(59,255,1)
                 pre_state = np.concatenate([pre_state, pre_handle], axis=2)
+                print('prev_steering')
                 if (do_greedy < self.__epsilon or always_random):
                     num_random += 1
                     next_state = self.__model.get_random_state()
                     predicted_reward = 0
+                    print('Do random')
                 else:
                     next_state, predicted_reward = self.__model.predict_state(pre_state)
-                    print('Model predicts {0}'.format(next_state))
+                    print('Model predicts')
                 # Convert the selected state to a control signal
                 next_control_signals = self.__model.state_to_control_signals(next_state, self.__car_client.getCarState())
-
+                print('state : {0}'.format(next_state))
                 # Take the action
                 self.__car_controls.steering = next_control_signals[0]
                 self.prev_steering = next_control_signals[0]
@@ -273,13 +303,15 @@ class DistributedAgent():
                         raise
                         
             file_name = os.path.join(checkpoint_dir,'{0}.json'.format(self.__num_batches_run)) 
-            with open(file_name, 'w') as f:
-                print('Checkpointing to {0}'.format(file_name))
-                f.write(checkpoint_str)
-            
+            # Removed cuz waist of memory. by Kang 21-03-11
+            # with open(file_name, 'w') as f:
+            #     print('Checkpointing to {0}'.format(file_name))
+            #     f.write(checkpoint_str)
+
             self.__last_checkpoint_batch_count = self.__num_batches_run
             
             # 운행시간을 이용해서 가장 오래 걸린 시간을 best policy로 보고, best policy를 따로 저장. #added 2021-03-09 by kang
+            # 만약 이번 회차의 운행시간이 가장 긴 운행시간일 경우에 best policy 저장
             if drive_time > self.__best_drive:
                 print("="*30)
                 print("New Best Policy!!!!!!")
@@ -293,12 +325,22 @@ class DistributedAgent():
                         if e.errno != errno.EEXIST:
                             raise
                 file_name = os.path.join(bestpoint_dir,'{0}.json'.format(self.__num_batches_run)) 
-
+                saved_file_name = os.path.join(os.path.join(self.__data_dir, 'saved_point'), 'best_model.json')
                 with open(file_name, 'w') as f:
                     print('Add Best Policy to {0}'.format(file_name))
                     f.write(checkpoint_str)
+                # saving bestpoint model and experiences to saved_point folder by Kang 21-03-12
+                with open (saved_file_name, 'w') as f:
+                    f.write(checkpoint_str)
+                # 처음부터 시작할때 최근의 상태를 알기 위하여 pickle로 experiences, epsilon 저장.   
+                
+                save_file = open(os.path.join(os.path.join(self.__data_dir, 'saved_point'), EXPERIENCE_FILENAME),'wb')
+                pkl.dump([self.__experiences, self.__epsilon], save_file)
+                save_file.close()
+
                 self.__best_model = self.__model
                 self.__best_experiences = self.__experiences
+                self.__best_epsilon = self.__epsilon
 
             # for test store best policy
             # elif self.__num_of_trial > 10:
@@ -312,7 +354,7 @@ class DistributedAgent():
 
     def __compute_reward(self, collision_info, car_state):
         #Define some constant parameters for the reward function
-        THRESH_DIST = 3.5                # The maximum distance from the center of the road to compute the reward function
+        THRESH_DIST = 4.0                # The maximum distance from the center of the road to compute the reward function
         DISTANCE_DECAY_RATE = 1.2        # The rate at which the reward decays for the distance function
         CENTER_SPEED_MULTIPLIER = 2.0    # The ratio at which we prefer the distance reward to the speed reward
 
@@ -370,7 +412,12 @@ class DistributedAgent():
     def __init_road_points(self):
         self.__road_points = []
         car_start_coords = [12961.722656, 6660.329102, 0]
-        with open(os.path.join(os.path.join(self.__data_dir, 'data'), 'road_lines.txt'), 'r') as f:
+        road = ''
+        if not random_respawn:
+            road = 'road_lines.txt'
+        else:
+            road = 'origin_road_lines.txt'
+        with open(os.path.join(os.path.join(self.__data_dir, 'data'), road), 'r') as f:
             for line in f:
                 points = line.split('\t')
                 first_point = np.array([float(p) for p in points[0].split(',')] + [0])
@@ -406,10 +453,15 @@ class DistributedAgent():
         # Pick a random position on the road. 
         # Do not start too close to either end, as the car may crash during the initial run.
         
-        random_interp = 0.15    # changed by GY 21-03-10
-        
-        # Pick a random direction to face
-        random_direction_interp = 0.4 # changed by GY 21-03-10
+        # added return to origin by Kang 21-03-10
+        if not random_respawn:
+            random_interp = 0.15    # changed by GY 21-03-10
+
+            # Pick a random direction to face
+            random_direction_interp = 0.4 # changed by GY 21-03-10
+        else:
+            random_interp = (np.random.random_sample() * 0.4) + 0.3 
+            random_direction_interp = np.random.random_sample()
 
         # Compute the starting point of the car
         random_line = self.__road_points[random_line_index]
