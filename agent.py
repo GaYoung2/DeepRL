@@ -2,7 +2,7 @@ import os
 from time import sleep
 import cv2
 from rl_model import RlModel
-from airsim_client import *
+from airsim_cliPent import *
 import datetime
 import copy
 import json
