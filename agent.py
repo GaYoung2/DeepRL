@@ -2,7 +2,7 @@ import os
 from time import sleep
 import cv2
 from rl_model import RlModel
-from airsim_cliPent import *
+from airsim_client import *
 import datetime
 import copy
 import json
@@ -316,18 +316,18 @@ class DistributedAgent():
         DISTANCE_DECAY_RATE = 1.2        # The rate at which the reward decays for the distance function
         CENTER_SPEED_MULTIPLIER = 2.0    # The ratio at which we prefer the distance reward to the speed reward
 
-        # If the car has collided, the reward is always zero
-        # 충돌 시 reward를 음수로 줘보았음.
-        if (collision_info.has_collided):
-<<<<<<< HEAD
-            return 0.0, True
-=======
-<<<<<<< HEAD
-            return -10, True
-=======
-            return -0.5, True
->>>>>>> 714800e7261b6c5f0e8c16e7e0f23841a4c9082f
->>>>>>> 2823c3146e42ec9da13a588170af5c60f3544e78
+#         # If the car has collided, the reward is always zero
+#         # 충돌 시 reward를 음수로 줘보았음.
+#         if (collision_info.has_collided):
+# <<<<<<< HEAD
+#             return 0.0, True
+# =======
+# <<<<<<< HEAD
+#             return -10, True
+# =======
+#             return -0.5, True
+# >>>>>>> 714800e7261b6c5f0e8c16e7e0f23841a4c9082f
+# >>>>>>> 2823c3146e42ec9da13a588170af5c60f3544e78
         
         # If the car is stopped, the reward is always zero
         speed = car_state.speed
