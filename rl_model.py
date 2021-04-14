@@ -26,8 +26,7 @@ np.set_printoptions(threshold=sys.maxsize)
 # A wrapper class for the DQN model
 class RlModel():
     def __init__(self, weights_path, train_conv_layers):
-        #self.__angle_values = [-1, -0.5, 0, 0.5, 1]
-        self.__angle_values = [-0.5, -0.25, 0, 0.25, 0.5] #continuous state
+        self.__angle_values = [-1, -0.5, 0, 0.5, 1]
 
         self.__nb_actions = 5
         # self.__nb_actions = 3
@@ -202,5 +201,5 @@ class RlModel():
     # Gets a random state
     # Used during annealing
     def get_random_state(self):
-        #return np.random.choice(5, 1)[0]
-        return np.random.randint(low=0, high=(self.__nb_actions) - 1)
+        return np.random.choice(5, 1)[0]
+        #return np.random.randint(low=0, high=(self.__nb_actions) - 1)
