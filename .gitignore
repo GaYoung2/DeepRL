@@ -3,6 +3,8 @@
 # Edit at https://www.toptal.com/developers/gitignore?templates=python,vscode
 
 ### json Folder ###
+data/1_layer_bestpoint/
+data/1_layer_checkpoint/local_run
 data/checkpoint/
 data/bestpoint/
 data/for_run/

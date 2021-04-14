@@ -9,9 +9,11 @@ import PIL.ImageFilter
 import datetime
 import cv2
 
-#MODEL_FILENAME = 'sample_model.json' #Your model goes here
+# MODEL_FILENAME = 'sample_model.json' #Your model goes here
 # MODEL_FILENAME = 'D:\checkpoint\local_run/13893.json'
-MODEL_FILENAME = 'data/checkpoint/local_run/286238.json'
+# MODEL_FILENAME = 'data/saved_point/best_model.json'
+# MODEL_FILENAME = '700551.json'
+MODEL_FILENAME = '17614.json'
 model = RlModel(None, False)
 with open(MODEL_FILENAME, 'r') as f:
     checkpoint_data = json.loads(f.read())
@@ -43,7 +45,7 @@ state_buffer_len = 4
 
 print('Running car for a few seconds...')
 car_controls.steering = 0
-car_controls.throttle = 1
+car_controls.throttle = 0
 car_controls.brake = 0
 car_client.setCarControls(car_controls)
 stop_run_time =datetime.datetime.now() + datetime.timedelta(seconds=1.5)

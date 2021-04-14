@@ -47,8 +47,10 @@ class RlModel():
         img_stack = Flatten()(img_stack)
         img_stack = Dropout(0.2)(img_stack)
 
-        img_stack = Dense(128, name='rl_dense', kernel_initializer=random_normal(stddev=0.01))(img_stack)
-        img_stack=Dropout(0.2)(img_stack)
+        # img_stack = Dense(128, name='rl_dense1', kernel_initializer=random_normal(stddev=0.01))(img_stack)   
+        # img_stack = Dense(128, name='rl_dense2', kernel_initializer=random_normal(stddev=0.01))(img_stack)   
+        img_stack = Dense(128, name='rl_dense3', kernel_initializer=random_normal(stddev=0.01))(img_stack)            
+        img_stack = Dropout(0.2)(img_stack)
         output = Dense(self.__nb_actions, name='rl_output', kernel_initializer=random_normal(stddev=0.01))(img_stack)
 
         opt = Adam()
@@ -190,6 +192,8 @@ class RlModel():
     # Convert the current state to control signals to drive the car.
     # As we are only predicting steering angle, we will use a simple controller to keep the car at a constant speed
     def state_to_control_signals(self, state, car_state):
+        # (angle, speed up, break) marked by kang 21-03-12
+
         if car_state.speed > 7:
             return (self.__angle_values[state], 0, 1)
         else:

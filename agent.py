@@ -13,7 +13,8 @@ import pickle as pkl
 # MODEL_FILENAME = 'data/saved_point/best_model.json'
 MODEL_FILENAME = None
 random_respawn = True
-EXPERIENCE_FILENAME = 'latest.pkl'
+# MODEL_FILENAME = '700551.json'
+EXPERIENCE_FILENAME = 'best.pkl'
 class DistributedAgent():
     def __init__(self):
         self.__model_buffer = None
@@ -23,7 +24,7 @@ class DistributedAgent():
         self.__handle_dir = 'data/handle_image/'
         self.__per_iter_epsilon_reduction = 0.003
         self.__min_epsilon = 0.1
-        self.__max_epoch_runtime_sec = float(30)
+        self.__max_epoch_runtime_sec = float(50)
         self.__replay_memory_size = 50
         self.__batch_size = 32
         self.__experiment_name = 'local_run'
@@ -73,10 +74,12 @@ class DistributedAgent():
             print("Latest Model Loaded!")
 
             # peakle을 이용해서 self.__experiences 불러오기
-            saved_file = open(os.path.join('data/saved_point/',EXPERIENCE_FILENAME), 'rb')
+            # saved_file = open(os.path.join('data/saved_point/',EXPERIENCE_FILENAME), 'rb')
+            saved_file = open(EXPERIENCE_FILENAME, 'rb')
             loaded_file = pkl.load(saved_file)
             self.__experiences = loaded_file[0]
             self.__epsilon = loaded_file[1]
+            self.__best_drive = loaded_file[2]
             saved_file.close()   
 
         self.__connect_to_airsim()
@@ -166,6 +169,7 @@ class DistributedAgent():
             if (collision_info.has_collided or car_state.speed < 1 or utc_now > end_time or far_off):
                 print('Start time: {0}, end time: {1}'.format(start_time, utc_now), file=sys.stderr)
                 print('Time elapsed: {0}'.format(utc_now-self.__the_start_time))
+                print('Current best drive: {0}'.format(self.__best_drive))
                 self.__car_controls.steering = 0
                 self.__car_controls.throttle = 0
                 self.__car_controls.brake = 1
@@ -183,21 +187,20 @@ class DistributedAgent():
                 angle = -int(self.prev_steering/0.05*4)
                 pre_handle = self.__handles[angle].reshape(59,255,1)
                 pre_state = np.concatenate([pre_state, pre_handle], axis=2)
-                print('prev_steering')
+                # print('prev_steering')
                 if (do_greedy < self.__epsilon or always_random):
                     num_random += 1
                     next_state = self.__model.get_random_state()
                     predicted_reward = 0
-                    print('Do random')
+                    print('Do random {0}'.format(next_state))
                 else:
                     next_state, predicted_reward = self.__model.predict_state(pre_state)
-                    print('Model predicts')
+                    print('Model predicts {0}'.format(next_state))
                 # Convert the selected state to a control signal
                 next_control_signals = self.__model.state_to_control_signals(next_state, self.__car_client.getCarState())
-                print('state : {0}'.format(next_state))
                 # Take the action
                 self.__car_controls.steering = self.prev_steering + next_control_signals[0]
-                print('prev {0} -> changed {1}'.format(self.prev_steering, self.__car_controls.steering))
+                # print('prev {0} -> changed {1}'.format(self.prev_steering, self.__car_controls.steering))
                 if self.__car_controls.steering > 1.0:
                     self.__car_controls.steering = 1.0
                 elif self.__car_controls.steering < -1.0:
@@ -307,12 +310,19 @@ class DistributedAgent():
                 except OSError as e:
                     if e.errno != errno.EEXIST:
                         raise
-                        
+                    EXPERIENCE_FILENAME
+
+            # saving experiences by every update
+            tmp = os.path.join(os.path.join(checkpoint_dir, 'experiencedata'),'{0}.pkl'.format(self.__num_batches_run))
+            
+            with open(tmp,'wb') as save_file:
+                pkl.dump([self.__experiences, self.__epsilon, self.__best_drive], save_file)
+                save_file.close()
             file_name = os.path.join(checkpoint_dir,'{0}.json'.format(self.__num_batches_run)) 
             # Removed cuz waist of memory. by Kang 21-03-11
-            # with open(file_name, 'w') as f:
-            #     print('Checkpointing to {0}'.format(file_name))
-            #     f.write(checkpoint_str)
+            with open(file_name, 'w') as f:
+                print('Checkpointing to {0}'.format(file_name))
+                f.write(checkpoint_str)
 
             self.__last_checkpoint_batch_count = self.__num_batches_run
             
@@ -341,33 +351,33 @@ class DistributedAgent():
                 # 처음부터 시작할때 최근의 상태를 알기 위하여 pickle로 experiences, epsilon 저장.   
                 
                 save_file = open(os.path.join(os.path.join(self.__data_dir, 'saved_point'), EXPERIENCE_FILENAME),'wb')
-                pkl.dump([self.__experiences, self.__epsilon], save_file)
+                pkl.dump([self.__experiences, self.__epsilon, self.__best_drive], save_file)
                 save_file.close()
 
                 self.__best_model = self.__model
                 self.__best_experiences = self.__experiences
                 self.__best_epsilon = self.__epsilon
 
-            elif self.__num_of_trial > 100:
-                print("="*30)
-                print("Reload best Model")
-                print("="*30)
-                self.__model = self.__best_model
-                self.__experiences = self.__best_experiences
-                self.__epsilon = self.__best_epsilon
-                self.__num_of_trial = 0
+            # elif self.__num_of_trial > 100:
+            #     print("="*30)
+            #     print("Reload best Model")
+            #     print("="*30)
+            #     self.__model = self.__best_model
+            #     self.__experiences = self.__best_experiences
+            #     self.__epsilon = self.__best_epsilon
+            #     self.__num_of_trial = 0
             self.__num_of_trial += 1
 
     def __compute_reward(self, collision_info, car_state):
         #Define some constant parameters for the reward function
-        THRESH_DIST = 4.0                # The maximum distance from the center of the road to compute the reward function
+        THRESH_DIST = 2.5                # The maximum distance from the center of the road to compute the reward function
         DISTANCE_DECAY_RATE = 1.2        # The rate at which the reward decays for the distance function
         CENTER_SPEED_MULTIPLIER = 2.0    # The ratio at which we prefer the distance reward to the speed reward
 
         # If the car has collided, the reward is always zero
         
         if (collision_info.has_collided):
-            return -10, True
+            return -1, True
         
         # If the car is stopped, the reward is always zero
         speed = car_state.speed
@@ -400,11 +410,16 @@ class DistributedAgent():
         return distance_reward, distance > THRESH_DIST
 
     def __get_image(self):
-        image_response = self.__car_client.simGetImages([ImageRequest(0, AirSimImageType.Scene, False, False)])[0]
+        image_response = self.__car_client.simGetImages([ImageRequest(0, 0, False, False)])[0]
         image1d = np.frombuffer(image_response.image_data_uint8, dtype=np.uint8)
+        print(type(image1d))
+        
         image_rgba = image1d.reshape(image_response.height, image_response.width, 4)
         image_rgba = image_rgba[76:135,0:255,0:3].astype(float)
         image_rgba = image_rgba.reshape(59, 255, 3)
+        dst=cv2.resize(image_rgba,dsize=(image_response.width*2,image_response.height*2),interpolation=cv2.INTER_AREA)
+        cv2.imshow('image',dst)
+        cv2.waitKey(1)
         return image_rgba
 
     def __init_road_points(self):
@@ -495,5 +510,6 @@ class DistributedAgent():
                         -40 : cv2.cvtColor(cv2.imread(self.__handle_dir+'left40.png'), cv2.COLOR_BGR2GRAY),
                         -60 : cv2.cvtColor(cv2.imread(self.__handle_dir+'left60.png'), cv2.COLOR_BGR2GRAY),
                         -80 : cv2.cvtColor(cv2.imread(self.__handle_dir+'left80.png'), cv2.COLOR_BGR2GRAY)}
+
 agent = DistributedAgent()
 agent.start()
