@@ -2,6 +2,7 @@ import os
 import shutil
 from time import sleep
 import cv2
+from keras.engine.input_layer import Input
 from rl_model import RlModel
 from airsim_client import *
 import datetime
@@ -56,7 +57,8 @@ class DistributedAgent():
         self.__best_epsilon = 1
         self.__num_of_trial = 0
         self.__the_start_time = datetime.datetime.utcnow()
-
+        self.__total_reward = 0
+        
     def start(self):
         
         self.__run_function()
@@ -67,7 +69,7 @@ class DistributedAgent():
         
         # Read json model file from here by Kang 21-03-10
         if MODEL_FILENAME != None:
-            with open(MODEL_FILENAME, 'r') as f:
+            with open(os.path.join('data/saved_point/',MODEL_FILENAME), 'r') as f:
                 checkpoint_data = json.loads(f.read())
                 self.__model.from_packet(checkpoint_data['model'])
             print("Latest Model Loaded!")
@@ -77,6 +79,7 @@ class DistributedAgent():
             loaded_file = pkl.load(saved_file)
             self.__experiences = loaded_file[0]
             self.__epsilon = loaded_file[1]
+            self.__num_batches_run = loaded_file[2]
             saved_file.close()   
 
         self.__connect_to_airsim()
@@ -152,7 +155,7 @@ class DistributedAgent():
         rewards = []
         predicted_rewards = []
         car_state = self.__car_client.getCarState()
-
+        self.__total_reward = 0
         start_time = datetime.datetime.utcnow()
         end_time = start_time + datetime.timedelta(seconds=self.__max_epoch_runtime_sec)
         
@@ -220,6 +223,7 @@ class DistributedAgent():
                 rewards.append(reward)
                 predicted_rewards.append(predicted_reward)
                 actions.append(next_state)
+                self.__total_reward = sum(rewards)
         # action수가 너무 적을경우, 그 회차의 학습을 진행하지 않음. #added 2021-03-09 by kang
         if len(actions) < 10:
             return self.__experiences, 0, 0
@@ -294,14 +298,14 @@ class DistributedAgent():
             checkpoint_str = json.dumps(checkpoint)
 
             checkpoint_dir = os.path.join(os.path.join(self.__data_dir, 'checkpoint'), self.__experiment_name)
-            
+
             if not os.path.isdir(checkpoint_dir):
                 try:
                     os.makedirs(checkpoint_dir)
                 except OSError as e:
                     if e.errno != errno.EEXIST:
                         raise
-                        
+                    
             file_name = os.path.join(checkpoint_dir,'{0}.json'.format(self.__num_batches_run)) 
             # Removed cuz waist of memory. by Kang 21-03-11
             # with open(file_name, 'w') as f:
@@ -312,12 +316,13 @@ class DistributedAgent():
             
             # 운행시간을 이용해서 가장 오래 걸린 시간을 best policy로 보고, best policy를 따로 저장. #added 2021-03-09 by kang
             # 만약 이번 회차의 운행시간이 가장 긴 운행시간일 경우에 best policy 저장
-            if drive_time > self.__best_drive:
+            if drive_time > self.__best_drive and self.__epsilon<0.2:
                 print("="*30)
                 print("New Best Policy!!!!!!")
                 print("="*30)
                 self.__best_drive = drive_time
                 bestpoint_dir = os.path.join(os.path.join(self.__data_dir, 'bestpoint'), self.__experiment_name)
+                reward_dir = os.path.join(self.__date_dir,'total_reward')
                 if not os.path.isdir(bestpoint_dir):
                     try:
                         os.makedirs(bestpoint_dir)
@@ -326,31 +331,25 @@ class DistributedAgent():
                             raise
                 file_name = os.path.join(bestpoint_dir,'{0}.json'.format(self.__num_batches_run)) 
                 saved_file_name = os.path.join(os.path.join(self.__data_dir, 'saved_point'), 'best_model.json')
+                reward_file_name = os.path.join(reward_dir,'{0}.txt'.format(self.__total_reward))
                 with open(file_name, 'w') as f:
                     print('Add Best Policy to {0}'.format(file_name))
                     f.write(checkpoint_str)
                 # saving bestpoint model and experiences to saved_point folder by Kang 21-03-12
+                with open(reward_file_name, 'w') as f: #saving total reward by Seo 21-05-03
+                    print('Add total reward to {0}'.format(reward_file_name))
+                    f.write(self.__total_reward)
                 with open (saved_file_name, 'w') as f:
                     f.write(checkpoint_str)
                 # 처음부터 시작할때 최근의 상태를 알기 위하여 pickle로 experiences, epsilon 저장.   
                 
                 save_file = open(os.path.join(os.path.join(self.__data_dir, 'saved_point'), EXPERIENCE_FILENAME),'wb')
-                pkl.dump([self.__experiences, self.__epsilon], save_file)
+                pkl.dump([self.__experiences, self.__epsilon, self.__num_batches_run], save_file)
                 save_file.close()
 
                 self.__best_model = self.__model
                 self.__best_experiences = self.__experiences
                 self.__best_epsilon = self.__epsilon
-
-            # for test store best policy
-            # elif self.__num_of_trial > 10:
-            #     print("="*30)
-            #     print("Reload best Model")
-            #     print("="*30)
-            #     self.__model = self.__best_model
-            #     self.__experiences = self.__best_experiences
-            #     self.__num_of_trial = 0
-            # self.__num_of_trial += 1
 
     def __compute_reward(self, collision_info, car_state):
         #Define some constant parameters for the reward function
@@ -497,5 +496,7 @@ class DistributedAgent():
                         -40 : cv2.cvtColor(cv2.imread(self.__handle_dir+'left40.png'), cv2.COLOR_BGR2GRAY),
                         -60 : cv2.cvtColor(cv2.imread(self.__handle_dir+'left60.png'), cv2.COLOR_BGR2GRAY),
                         -80 : cv2.cvtColor(cv2.imread(self.__handle_dir+'left80.png'), cv2.COLOR_BGR2GRAY)}
+print('If you want to load best policy, Enter "y" ,otherwise "n"')
+MODEL_FILENAME = 'best_model.json' if input()=='y' else None
 agent = DistributedAgent()
 agent.start()
