@@ -6,6 +6,7 @@ import os,sys
 import tensorflow as tf
 import tensorflow.compat.v1 as tf
 tf.disable_v2_behavior()
+import keras
 from keras.preprocessing.image import ImageDataGenerator
 from keras.models import Sequential, Model, clone_model, load_model
 from keras.layers import Conv2D, MaxPooling2D, Dropout, Flatten, Dense, Lambda, Input, concatenate
@@ -26,7 +27,8 @@ np.set_printoptions(threshold=sys.maxsize)
 # A wrapper class for the DQN model
 class RlModel():
     def __init__(self, weights_path, train_conv_layers):
-        self.__angle_values = [-1, -0.5, 0, 0.5, 1]
+        #self.__angle_values = [-1, -0.5, 0, 0.5, 1]
+        self.__angle_values = [-0.5, -0.25, 0, 0.25, 0.5] #continuous state
 
         self.__nb_actions = 5
         # self.__nb_actions = 3
@@ -57,6 +59,8 @@ class RlModel():
 
         self.__action_model.compile(optimizer=opt, loss='mean_squared_error')
         self.__action_model.summary()
+
+        keras.utils.plot_model(self.__action_model, 'a.png', show_shapes=True)
         
         # If we are using pretrained weights for the conv layers, load them and verify the first layer.
         if (weights_path is not None and len(weights_path) > 0):
@@ -183,7 +187,8 @@ class RlModel():
         observation = observation.reshape(1,59,255,4)
         with self.__action_context.as_default():
             predicted_qs = self.__action_model.predict([observation])
-
+        print('predicted_qs',predicted_qs)
+        print('sum of this', sum(sum(predicted_qs)))
         # Select the action with the highest Q value
         predicted_state = np.argmax(predicted_qs)
         return (predicted_state, predicted_qs[0][predicted_state])

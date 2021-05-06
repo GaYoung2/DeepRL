@@ -12,8 +12,8 @@ import cv2
 # MODEL_FILENAME = 'sample_model.json' #Your model goes here
 # MODEL_FILENAME = 'D:\checkpoint\local_run/13893.json'
 # MODEL_FILENAME = 'data/saved_point/best_model.json'
-# MODEL_FILENAME = '700551.json'
-MODEL_FILENAME = '17614.json'
+MODEL_FILENAME = '700551.json'
+# MODEL_FILENAME = '957458.json'
 model = RlModel(None, False)
 with open(MODEL_FILENAME, 'r') as f:
     checkpoint_data = json.loads(f.read())
@@ -47,7 +47,7 @@ def get_next_starting_point(car_client):
         # Pick a random position on the road. 
         # Do not start too close to either end, as the car may crash during the initial run.
         
-        random_interp = 0.15    # changed by GY 21-03-10
+        random_interp = 0.3    # changed by GY 21-03-10
         
         # Pick a random direction to face
         random_direction_interp = 0.4 # changed by GY 21-03-10
@@ -122,10 +122,14 @@ while(True):
     state_buffer = np.concatenate([state_buffer, pre_handle], axis=2)
     next_state, dummy = model.predict_state(state_buffer)
     next_control_signal = model.state_to_control_signals(next_state, car_client.getCarState())
+
     car_controls.steering = next_control_signal[0]
-    prev_steering = car_controls.steering
+    # prev_steering = car_controls.steering
     car_controls.throttle = next_control_signal[1]
     car_controls.brake = next_control_signal[2]
-    car_client.setCarControls(car_controls)
+    
     print('State = {0}, steering = {1}, throttle = {2}, brake = {3}'.format(next_state, car_controls.steering, car_controls.throttle, car_controls.brake))
+
+    car_client.setCarControls(car_controls)
+    
     time.sleep(0.1)
