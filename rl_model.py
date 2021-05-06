@@ -1,3 +1,4 @@
+
 import time
 import numpy as np
 import json
@@ -5,6 +6,7 @@ import threading
 import os,sys
 import tensorflow as tf
 import tensorflow.compat.v1 as tf
+
 tf.disable_v2_behavior()
 from keras.preprocessing.image import ImageDataGenerator
 from keras.models import Sequential, Model, clone_model, load_model
@@ -25,18 +27,18 @@ K.set_session(session)
 np.set_printoptions(threshold=sys.maxsize)  
 # A wrapper class for the DQN model
 class RlModel():
-    def __init__(self, weights_path, train_conv_layers):
-        #self.__angle_values = [-1, -0.5, 0, 0.5, 1]
-        self.__angle_values = [-0.5, -0.25, 0, 0.25, 0.5] #continuous state
+    def __init__(self, weights_path, train_conv_layers):  #false, false
+        self.__angle_values = [-1, -0.5, 0, 0.5, 1]
+        #self.__angle_values = [-0.5, -0.25, 0, 0.25, 0.5] #continuous state
 
-        self.__nb_actions = 5
-        # self.__nb_actions = 3
+        self.__nb_actions = 5 #action의 갯수= angle_values의 갯수
+
         self.__gamma = 0.99
 
         #Define the model
-        activation = 'relu'
+        activation = 'relu' #activation함수는 relu함수를 쓴다.
         #pic_input = Input(shape=(59,255,3))
-        pic_input = Input(shape=(59,255,4))
+        pic_input = Input(shape=(59,255,4)) #핸들 이미지를 추가해서 shape이 4층이 되었음.
         
         img_stack = Conv2D(16, (3, 3), name='convolution0', padding='same', activation=activation, trainable=train_conv_layers)(pic_input)
         img_stack = MaxPooling2D(pool_size=(2,2))(img_stack)
@@ -46,9 +48,15 @@ class RlModel():
         img_stack = MaxPooling2D(pool_size=(2, 2))(img_stack)
         img_stack = Flatten()(img_stack)
         img_stack = Dropout(0.2)(img_stack)
-
-        img_stack = Dense(128, name='rl_dense', kernel_initializer=random_normal(stddev=0.01))(img_stack)
-        img_stack=Dropout(0.2)(img_stack)
+        img_stack = Dense(128, name='rl_dense1', kernel_initializer=random_normal(stddev=0.01))(img_stack)
+        #img_stack=Dropout(0.2)(img_stack)
+        BatchNormalization()
+        img_stack = Dense(128, name='rl_dense2', kernel_initializer=random_normal(stddev=0.01))(img_stack)
+        #img_stack=Dropout(0.2)(img_stack)
+        BatchNormalization()
+        img_stack = Dense(128, name='rl_dense3', kernel_initializer=random_normal(stddev=0.01))(img_stack)
+        #img_stack=Dropout(0.2)(img_stack)
+        BatchNormalization()
         output = Dense(self.__nb_actions, name='rl_output', kernel_initializer=random_normal(stddev=0.01))(img_stack)
 
         opt = Adam()
@@ -57,17 +65,17 @@ class RlModel():
         self.__action_model.compile(optimizer=opt, loss='mean_squared_error')
         self.__action_model.summary()
         
-        # If we are using pretrained weights for the conv layers, load them and verify the first layer.
-        if (weights_path is not None and len(weights_path) > 0):
-            print('Loading weights from my_model_weights.h5...')
-            print('Current working dir is {0}'.format(os.getcwd()))
-            self.__action_model.load_weights(weights_path, by_name=True)
+        # If we are using pretrained weights for the conv layers, load them and verify the first layer. #지도학습을 안쓰니까 빼도 된다.
+        # if (weights_path is not None and len(weights_path) > 0):
+        #     print('Loading weights from my_model_weights.h5...')
+        #     print('Current working dir is {0}'.format(os.getcwd()))
+        #     self.__action_model.load_weights(weights_path, by_name=True)
             
-            print('First layer: ')
-            w = np.array(self.__action_model.get_weights()[0])
-            print(w)
-        else:
-            print('Not loading weights')
+        #     print('First layer: ')
+        #     w = np.array(self.__action_model.get_weights()[0])
+        #     print(w)
+        # else:
+        print('Not loading weights')
 
         # Set up the target model. 
         # This is a trick that will allow the model to converge more rapidly.

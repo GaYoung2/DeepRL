@@ -6,6 +6,14 @@ from airsim_client import *
 import datetime
 import copy
 import json
+import pickle as pkl
+
+import matplotlib.pyplot as plt
+MODEL_FILENAME = None
+random_respawn = True
+EXPERIENCE_FILENAME = 'latest.pkl'
+
+#21-05-05 best policy를 하기 위해, random값이 0.1 이하일때만, 베스트 모델을 저장, 200회동안 베스트가 없으면 다시 돌아가는걸로
 
 class DistributedAgent():
     def __init__(self):
@@ -47,12 +55,31 @@ class DistributedAgent():
         self.__best_drive = datetime.timedelta(seconds=-1)  #added 2021-03-09 by kang
         self.__best_model = None  #added 2021-03-09 by kang
         self.__num_of_trial = 0
+        self.trainStartTime = datetime.timedelta(seconds=-1) #added by Kim 21-05-05
 
     def start(self):
+        self.trainStartTime = datetime.datetime.utcnow() #added by Kim 21-05-05
+        print(self.trainStartTime)
         self.__run_function()
+        
 
     def __run_function(self):
         self.__model = RlModel(self.__weights_path, self.__train_conv_layers)
+
+        # Read json model file from here by Kang 21-03-10
+        if MODEL_FILENAME != None:
+            with open(MODEL_FILENAME, 'r') as f:
+                checkpoint_data = json.loads(f.read())
+                self.__model.from_packet(checkpoint_data['model'])
+            print("Latest Model Loaded!")
+
+            # peakle을 이용해서 self.__experiences 불러오기
+            saved_file = open(os.path.join('data/saved_point/',EXPERIENCE_FILENAME), 'rb')
+            loaded_file = pkl.load(saved_file)
+            self.__experiences = loaded_file[0]
+            self.__epsilon = loaded_file[1]
+            saved_file.close()   
+
         self.__connect_to_airsim()
         print('Filling replay memory...')
         while True:
@@ -137,6 +164,7 @@ class DistributedAgent():
             utc_now = datetime.datetime.utcnow()
             
             if (collision_info.has_collided or car_state.speed < 1 or utc_now > end_time or far_off):
+                print("Train Start Time : ",self.trainStartTime)
                 print('Start time: {0}, end time: {1}'.format(start_time, utc_now), file=sys.stderr)
                 self.__car_controls.steering = 0
                 self.__car_controls.throttle = 0
@@ -166,13 +194,8 @@ class DistributedAgent():
                 next_control_signals = self.__model.state_to_control_signals(next_state, self.__car_client.getCarState())
 
                 # Take the action
-                self.__car_controls.steering = self.prev_steering + next_control_signals[0]
-                if self.__car_controls.steering > 1.0:
-                    self.__car_controls.steering = 1.0
-                elif self.__car_controls.steering < -1.0:
-                    self.__car_controls.steering = -1.0
-                self.prev_steering = self.__car_controls.steering
-                print('change steering : ', self.prev_steering)
+                self.__car_controls.steering = next_control_signals[0]
+                self.prev_steering = next_control_signals[0]
                 self.__car_controls.throttle = next_control_signals[1]
                 self.__car_controls.brake = next_control_signals[2]
                 self.__car_client.setCarControls(self.__car_controls)
@@ -285,7 +308,7 @@ class DistributedAgent():
             self.__last_checkpoint_batch_count = self.__num_batches_run
             
             # 운행시간을 이용해서 가장 오래 걸린 시간을 best policy로 보고, best policy를 따로 저장. #added 2021-03-09 by kang
-            if drive_time > self.__best_drive:
+            if (drive_time > self.__best_drive) and (self.__epsilon<=0.15): #랜덤값이 0.2 이하일때만 베스트 폴리시를 저장 21-05-05 by Kim
                 print("="*30)
                 print("New Best Policy!!!!!!")
                 print("="*30)
@@ -299,14 +322,23 @@ class DistributedAgent():
                         if e.errno != errno.EEXIST:
                             raise
                 file_name = os.path.join(bestpoint_dir,'{0}.json'.format(self.__num_batches_run)) 
-
+                saved_file_name = os.path.join(os.path.join(self.__data_dir, 'saved_point'), 'best_model.json')
+                
                 with open(file_name, 'w') as f:
                     print('Add Best Policy to {0}'.format(file_name))
                     f.write(checkpoint_str)
+                # saving bestpoint model and experiences to saved_point folder by Kang 21-03-12
+                with open (saved_file_name, 'w') as f:
+                    f.write(checkpoint_str)
+                # 처음부터 시작할때 최근의 상태를 알기 위하여 pickle로 experiences, epsilon 저장.   
+                save_file = open(os.path.join(os.path.join(self.__data_dir, 'saved_point'), EXPERIENCE_FILENAME),'wb')
+                pkl.dump([self.__experiences, self.__epsilon], save_file)
+                save_file.close()
+
                 self.__best_model = self.__model
                 self.__best_experiences = self.__experiences
-
-            elif self.__num_of_trial > 10:
+            # for test store best policy
+            elif self.__num_of_trial > 200 and (self.__epsilon<=0.15): #횟수가 30회가 넘지 않으면, 이전 best모델을 다시 가져온다. by Kim 21-05-05
                 print("="*30)
                 print("Reload best Model")
                 print("="*30)
@@ -322,9 +354,8 @@ class DistributedAgent():
         CENTER_SPEED_MULTIPLIER = 2.0    # The ratio at which we prefer the distance reward to the speed reward
 
         # If the car has collided, the reward is always zero
-        # 충돌 시 reward를 음수로 줘보았음.
         if (collision_info.has_collided):
-            return -0.5, True
+            return 0.0, True
         
         # If the car is stopped, the reward is always zero
         speed = car_state.speed
@@ -351,6 +382,7 @@ class DistributedAgent():
                 local_distance = np.linalg.norm(proj - car_point)
             
             distance = min(local_distance, distance)
+            print(local_distance, distance)
             
         distance_reward = math.exp(-(distance * DISTANCE_DECAY_RATE))
         
