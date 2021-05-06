@@ -46,8 +46,13 @@ class RlModel():
         img_stack = Flatten()(img_stack)
         img_stack = Dropout(0.2)(img_stack)
 
-        img_stack = Dense(128, name='rl_dense', kernel_initializer=random_normal(stddev=0.01))(img_stack)
-        img_stack=Dropout(0.2)(img_stack)
+        img_stack = Dense(128, name='rl_dense1', kernel_initializer=random_normal(stddev=0.01))(img_stack)
+        #img_stack=Dropout(0.2)(img_stack)
+        BatchNormalization()
+        img_stack = Dense(128, name='rl_dense2', kernel_initializer=random_normal(stddev=0.01))(img_stack)
+        BatchNormalization()
+        img_stack = Dense(128, name='rl_dense3', kernel_initializer=random_normal(stddev=0.01))(img_stack)
+        BatchNormalization()
         output = Dense(self.__nb_actions, name='rl_output', kernel_initializer=random_normal(stddev=0.01))(img_stack)
 
         opt = Adam()

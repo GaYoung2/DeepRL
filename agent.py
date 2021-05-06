@@ -22,12 +22,13 @@ class DistributedAgent():
         self.__airsim_started = False
         self.__data_dir = 'data/'
         self.__handle_dir = 'data/handle_image/'
+        self.__airsim_path = '../AD_Cookbook_AirSim/'
         self.__per_iter_epsilon_reduction = 0.003
         self.__min_epsilon = 0.1
         self.__max_epoch_runtime_sec = float(30)
         self.__replay_memory_size = 50
         self.__batch_size = 32
-        self.__experiment_name = 'local_run'
+        self.__experiment_name = 'handle'
         self.__train_conv_layers = False
         self.__epsilon = 1
         self.__percent_full = 0
@@ -36,7 +37,6 @@ class DistributedAgent():
         self.__handles = {}
         self.__batch_update_frequency = 10
         self.__weights_path = None    
-        self.__airsim_path = '../AD_Cookbook_AirSim/'
         self.__local_run = True
         self.__car_client = None
         self.__car_controls = None
@@ -58,11 +58,10 @@ class DistributedAgent():
         self.__num_of_trial = 0
         self.__the_start_time = datetime.datetime.utcnow()
         self.__total_reward = 0
+        self.__drive_time = 0
         
-    def start(self):
-        
+    def start(self):  
         self.__run_function()
-        
 
     def __run_function(self):
         self.__model = RlModel(self.__weights_path, self.__train_conv_layers)
@@ -82,7 +81,7 @@ class DistributedAgent():
             self.__num_batches_run = loaded_file[2]
             saved_file.close()   
 
-        self.__connect_to_airsim()
+        #self.__connect_to_airsim()
         
         while True:
             print('Running Airsim Epoch.')
@@ -94,7 +93,7 @@ class DistributedAgent():
                     print('Replay memory now contains {0} members. ({1}% full)'.format(len(self.__experiences['actions']), self.__percent_full))
                 else:
                     if (self.__model is not None):
-                        experiences, frame_count, drive_time = self.__run_airsim_epoch(False)
+                        experiences, frame_count, self.__drive_time = self.__run_airsim_epoch(False)
                         # If we didn't immediately crash, train on the gathered experiences
                         if (frame_count > 0):
                             print('Generating {0} minibatches...'.format(frame_count))
@@ -107,31 +106,11 @@ class DistributedAgent():
                             # If we successfully sampled, train on the collected minibatches and send the gradients to the trainer node
                             if (len(sampled_experiences) > 0):
                                 print('Publishing AirSim Epoch.')
-                                self.__publish_batch_and_update_model(sampled_experiences, frame_count, drive_time)
+                                self.__publish_batch_and_update_model(sampled_experiences, frame_count, self.__drive_time)
                 
             except msgpackrpc.error.TimeoutError:
                 print('Lost connection to AirSim while fillling replay memory. Attempting to reconnect.')
                 self.__connect_to_airsim()
-
-    def __connect_to_airsim(self):
-        attempt_count = 0
-        while True:
-            try:
-                print('Attempting to connect to AirSim (attempt {0})'.format(attempt_count))
-                self.__car_client = CarClient()
-                self.__car_client.confirmConnection()
-                self.__car_client.enableApiControl(True)
-                self.__car_controls = CarControls()
-                print('Connected!')
-                return
-            except:
-                print('Failed to connect.')
-                attempt_count += 1
-                if (attempt_count % 10 == 0):
-                    print('10 consecutive failures to connect. Attempting to start AirSim on my own.')
-                    os.system('START "" powershell.exe {0}'.format(os.path.join(self.__airsim_path, 'AD_Cookbook_Start_AirSim.ps1 neighborhood -windowed')))
-                print('Waiting a few seconds.')
-                time.sleep(10)
 
     def __run_airsim_epoch(self, always_random):
         starting_points, starting_direction = self.__get_next_starting_point()
@@ -186,18 +165,15 @@ class DistributedAgent():
                 angle = -int(self.prev_steering/0.05*4)
                 pre_handle = self.__handles[angle].reshape(59,255,1)
                 pre_state = np.concatenate([pre_state, pre_handle], axis=2)
-                print('prev_steering')
                 if (do_greedy < self.__epsilon or always_random):
                     num_random += 1
                     next_state = self.__model.get_random_state()
                     predicted_reward = 0
-                    print('Do random')
                 else:
                     next_state, predicted_reward = self.__model.predict_state(pre_state)
                     print('Model predicts')
                 # Convert the selected state to a control signal
                 next_control_signals = self.__model.state_to_control_signals(next_state, self.__car_client.getCarState())
-                print('state : {0}'.format(next_state))
                 # Take the action
                 self.__car_controls.steering = next_control_signals[0]
                 self.prev_steering = next_control_signals[0]
@@ -284,7 +260,7 @@ class DistributedAgent():
             
         return sampled_experiences
         
-    def __publish_batch_and_update_model(self, batches, batches_count, drive_time): # added 2021-03-09 by kang
+    def __publish_batch_and_update_model(self, batches, batches_count, drive_time): # updateed 2021-03-09 by kang
         # Train and get the gradients
         print('Publishing epoch data and getting latest model from parameter server...')
         gradients = self.__model.get_gradient_update_from_batches(batches) 
@@ -322,7 +298,7 @@ class DistributedAgent():
                 print("="*30)
                 self.__best_drive = drive_time
                 bestpoint_dir = os.path.join(os.path.join(self.__data_dir, 'bestpoint'), self.__experiment_name)
-                reward_dir = os.path.join(self.__date_dir,'total_reward')
+                record_dir = os.path.join(os.path.join(self.__data_dir,'record'),self.__experiment_name)
                 if not os.path.isdir(bestpoint_dir):
                     try:
                         os.makedirs(bestpoint_dir)
@@ -331,14 +307,16 @@ class DistributedAgent():
                             raise
                 file_name = os.path.join(bestpoint_dir,'{0}.json'.format(self.__num_batches_run)) 
                 saved_file_name = os.path.join(os.path.join(self.__data_dir, 'saved_point'), 'best_model.json')
-                reward_file_name = os.path.join(reward_dir,'{0}.txt'.format(self.__total_reward))
+                record_file_name = os.path.join(record_dir,'{0}.txt'.format(self.__num_batches_run))
                 with open(file_name, 'w') as f:
                     print('Add Best Policy to {0}'.format(file_name))
                     f.write(checkpoint_str)
                 # saving bestpoint model and experiences to saved_point folder by Kang 21-03-12
-                with open(reward_file_name, 'w') as f: #saving total reward by Seo 21-05-03
-                    print('Add total reward to {0}'.format(reward_file_name))
-                    f.write(self.__total_reward)
+                with open(record_file_name, 'w') as f: #saving information of model by Seo 21-05-03
+                    print('Add info to {0}'.format(record_file_name))
+                    f.write(f'Total reward : {self.__total_reward}\n')
+                    f.write(f'Stare Time : {self.__the_start_time}\n')
+                    f.write(f'Drive Time : {self.__drive_time}\n')
                 with open (saved_file_name, 'w') as f:
                     f.write(checkpoint_str)
                 # 처음부터 시작할때 최근의 상태를 알기 위하여 pickle로 experiences, epsilon 저장.   
@@ -355,24 +333,10 @@ class DistributedAgent():
         #Define some constant parameters for the reward function
         THRESH_DIST = 4.0                # The maximum distance from the center of the road to compute the reward function
         DISTANCE_DECAY_RATE = 1.2        # The rate at which the reward decays for the distance function
-        CENTER_SPEED_MULTIPLIER = 2.0    # The ratio at which we prefer the distance reward to the speed reward
-
-#         # If the car has collided, the reward is always zero
-#         # 충돌 시 reward를 음수로 줘보았음.
-#         if (collision_info.has_collided):
-# <<<<<<< HEAD
-#             return 0.0, True
-# =======
-# <<<<<<< HEAD
-#             return -10, True
-# =======
-#             return -0.5, True
-# >>>>>>> 714800e7261b6c5f0e8c16e7e0f23841a4c9082f
-# >>>>>>> 2823c3146e42ec9da13a588170af5c60f3544e78
         
         # If the car is stopped, the reward is always zero
         speed = car_state.speed
-        if (speed < 2):
+        if (speed < 2 or collision_info==True):
             return 0.0, True
         
         #Get the car position
@@ -496,6 +460,7 @@ class DistributedAgent():
                         -40 : cv2.cvtColor(cv2.imread(self.__handle_dir+'left40.png'), cv2.COLOR_BGR2GRAY),
                         -60 : cv2.cvtColor(cv2.imread(self.__handle_dir+'left60.png'), cv2.COLOR_BGR2GRAY),
                         -80 : cv2.cvtColor(cv2.imread(self.__handle_dir+'left80.png'), cv2.COLOR_BGR2GRAY)}
+
 print('If you want to load best policy, Enter "y" ,otherwise "n"')
 MODEL_FILENAME = 'best_model.json' if input()=='y' else None
 agent = DistributedAgent()
