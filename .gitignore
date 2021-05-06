@@ -5,6 +5,8 @@
 ### json Folder ###
 data/checkpoint/
 data/bestpoint/
+data/for_run/
+data/saved_point/
 
 ### Python ###
 # Byte-compiled / optimized / DLL files
@@ -148,7 +150,7 @@ dmypy.json
 
 ### vscode ###
 .vscode/*
-!.vscode/settings.json
+.vscode/settings.json
 !.vscode/tasks.json
 !.vscode/launch.json
 !.vscode/extensions.json
