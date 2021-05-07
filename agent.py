@@ -81,7 +81,7 @@ class DistributedAgent():
             self.__num_batches_run = loaded_file[2]
             saved_file.close()   
 
-        #self.__connect_to_airsim()
+        self.__connect_to_airsim()
         
         while True:
             print('Running Airsim Epoch.')
@@ -111,6 +111,26 @@ class DistributedAgent():
             except msgpackrpc.error.TimeoutError:
                 print('Lost connection to AirSim while fillling replay memory. Attempting to reconnect.')
                 self.__connect_to_airsim()
+                
+    def __connect_to_airsim(self):
+        attempt_count = 0
+        while True:
+            try:
+                print('Attempting to connect to AirSim (attempt {0})'.format(attempt_count))
+                self.__car_client = CarClient()
+                self.__car_client.confirmConnection()
+                self.__car_client.enableApiControl(True)
+                self.__car_controls = CarControls()
+                print('Connected!')
+                return
+            except:
+                print('Failed to connect.')
+                attempt_count += 1
+                if (attempt_count % 10 == 0):
+                    print('10 consecutive failures to connect. Attempting to start AirSim on my own.')
+                    os.system('START "" powershell.exe {0}'.format(os.path.join(self.__airsim_path, 'AD_Cookbook_Start_AirSim.ps1 neighborhood -windowed')))
+                print('Waiting a few seconds.')
+                time.sleep(10)
 
     def __run_airsim_epoch(self, always_random):
         starting_points, starting_direction = self.__get_next_starting_point()
