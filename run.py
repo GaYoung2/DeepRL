@@ -9,7 +9,7 @@ import PIL.ImageFilter
 import datetime
 import cv2
 
-MODEL_FILENAME = 'data/bestpoint/local_run/214807.json'
+MODEL_FILENAME = 'data/bestpoint/handle+static/336724.json'
 
 model = RlModel(None, False)
 with open(MODEL_FILENAME, 'r') as f:

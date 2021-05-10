@@ -28,7 +28,7 @@ class DistributedAgent():
         self.__max_epoch_runtime_sec = float(30)
         self.__replay_memory_size = 50
         self.__batch_size = 32
-        self.__experiment_name = 'handle'
+        self.__experiment_name = 'original'
         self.__train_conv_layers = False
         self.__epsilon = 1
         self.__percent_full = 0
@@ -182,9 +182,9 @@ class DistributedAgent():
                 # The Agent should occasionally pick random action instead of best action
                 do_greedy = np.random.random_sample()
                 pre_state = copy.deepcopy(state_buffer)
-                angle = -int(self.prev_steering/0.05*4)
-                pre_handle = self.__handles[angle].reshape(59,255,1)
-                pre_state = np.concatenate([pre_state, pre_handle], axis=2)
+                # angle = -int(self.prev_steering/0.05*4)
+                # pre_handle = self.__handles[angle].reshape(59,255,1)
+                # pre_state = np.concatenate([pre_state, pre_handle], axis=2)
                 if (do_greedy < self.__epsilon or always_random):
                     num_random += 1
                     next_state = self.__model.get_random_state()
@@ -206,9 +206,12 @@ class DistributedAgent():
 
                 # Observe outcome and compute reward from action
                 state_buffer = self.__get_image()
-                angle = -int(self.prev_steering/0.05*4)
-                post_handle = self.__handles[angle].reshape(59,255,1)
-                post_state = np.concatenate([state_buffer, post_handle],axis=2)
+
+                # angle = -int(self.prev_steering/0.05*4)
+                # post_handle = self.__handles[angle].reshape(59,255,1)
+                # post_state = np.concatenate([state_buffer, post_handle],axis=2)
+                post_state = state_buffer #deleted when append handle
+
                 car_state = self.__car_client.getCarState()
                 collision_info = self.__car_client.getCollisionInfo()
                 reward, far_off = self.__compute_reward(collision_info, car_state)
@@ -335,7 +338,8 @@ class DistributedAgent():
                 with open(record_file_name, 'w') as f: #saving information of model by Seo 21-05-03
                     print('Add info to {0}'.format(record_file_name))
                     f.write(f'Total reward : {self.__total_reward}\n')
-                    f.write(f'Stare Time : {self.__the_start_time}\n')
+                    f.write(f'Start Time : {self.__the_start_time}\n')
+                    f.write(f'Epoch Time : {datetime.datetime.utcnow()}')
                     f.write(f'Drive Time : {self.__drive_time}\n')
                 with open (saved_file_name, 'w') as f:
                     f.write(checkpoint_str)
