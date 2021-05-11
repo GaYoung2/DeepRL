@@ -11,7 +11,7 @@ import cv2
 
 #MODEL_FILENAME = 'sample_model.json' #Your model goes here
 # MODEL_FILENAME = 'D:\checkpoint\local_run/13893.json'
-MODEL_FILENAME = 'data/checkpoint/last_local_run/19105.json'
+MODEL_FILENAME = 'data/bestpoint/86021.json'
 model = RlModel(None, False)
 with open(MODEL_FILENAME, 'r') as f:
     checkpoint_data = json.loads(f.read())

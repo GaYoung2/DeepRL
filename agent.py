@@ -13,7 +13,7 @@ import pickle as pkl
 # for start from the model added by kang 21-03-10
 # MODEL_FILENAME = 'data/saved_point/best_model.json'
 MODEL_FILENAME = None
-random_respawn = True
+random_respawn = False
 EXPERIENCE_FILENAME = 'latest.pkl'
 class DistributedAgent():
     def __init__(self):
@@ -58,6 +58,7 @@ class DistributedAgent():
         self.__num_of_trial = 0
         self.__the_start_time = datetime.datetime.utcnow()
         self.__total_reward = 0
+        self.__best_reward = 0
         self.__drive_time = 0
         
     def start(self):  
@@ -82,7 +83,7 @@ class DistributedAgent():
             self.__num_batches_run = loaded_file[2]
             saved_file.close()   
 
-        #self.__connect_to_airsim()
+        self.__connect_to_airsim()
         
         while True:
             print('Running Airsim Epoch.')
@@ -112,6 +113,25 @@ class DistributedAgent():
             except msgpackrpc.error.TimeoutError:
                 print('Lost connection to AirSim while fillling replay memory. Attempting to reconnect.')
                 self.__connect_to_airsim()
+    def __connect_to_airsim(self):
+        attempt_count = 0
+        while True:
+            try:
+                print('Attempting to connect to AirSim (attempt {0})'.format(attempt_count))
+                self.__car_client = CarClient()
+                self.__car_client.confirmConnection()
+                self.__car_client.enableApiControl(True)
+                self.__car_controls = CarControls()
+                print('Connected!')
+                return
+            except:
+                print('Failed to connect.')
+                attempt_count += 1
+                if (attempt_count % 10 == 0):
+                    print('10 consecutive failures to connect. Attempting to start AirSim on my own.')
+                    os.system('START "" powershell.exe {0}'.format(os.path.join(self.__airsim_path, 'AD_Cookbook_Start_AirSim.ps1 neighborhood -windowed')))
+                print('Waiting a few seconds.')
+                time.sleep(10)
 
     def __run_airsim_epoch(self, always_random):
         starting_points, starting_direction = self.__get_next_starting_point()
@@ -147,7 +167,7 @@ class DistributedAgent():
             utc_now = datetime.datetime.utcnow()
             
             if (collision_info.has_collided or car_state.speed < 1 or utc_now > end_time or far_off):
-                print("Train Start Time : ",self.trainStartTime)
+                print('Start time: {0}, end time: {1}'.format(start_time, utc_now), file=sys.stderr)
                 print('Start time: {0}, end time: {1}'.format(start_time, utc_now), file=sys.stderr)
                 print('Time elapsed: {0}'.format(utc_now-self.__the_start_time))
                 self.__car_controls.steering = 0
@@ -292,13 +312,12 @@ class DistributedAgent():
 
             self.__last_checkpoint_batch_count = self.__num_batches_run
             
-            # 운행시간을 이용해서 가장 오래 걸린 시간을 best policy로 보고, best policy를 따로 저장. #added 2021-03-09 by kang
-            # 만약 이번 회차의 운행시간이 가장 긴 운행시간일 경우에 best policy 저장
-            if drive_time > self.__best_drive and self.__epsilon<0.2:
+            # total reward값이, best total reward보다 클 때, best policy로 선정
+            if self.__total_reward > self.__best_reward and self.__epsilon<0.2:
                 print("="*30)
                 print("New Best Policy!!!!!!")
                 print("="*30)
-                self.__best_drive = drive_time
+                #self.__best_drive = drive_time
                 bestpoint_dir = os.path.join(os.path.join(self.__data_dir, 'bestpoint'), self.__experiment_name)
                 record_dir = os.path.join(os.path.join(self.__data_dir,'record'),self.__experiment_name)
                 if not os.path.isdir(bestpoint_dir):
@@ -330,6 +349,7 @@ class DistributedAgent():
                 self.__best_model = self.__model
                 self.__best_experiences = self.__experiences
                 self.__best_epsilon = self.__epsilon
+                self.__best_reward = self.__total_reward #best reward를 갱신
 
     def __compute_reward(self, collision_info, car_state):
         #Define some constant parameters for the reward function
@@ -366,7 +386,6 @@ class DistributedAgent():
                 local_distance = np.linalg.norm(proj - car_point)
             
             distance = min(local_distance, distance)
-            print(local_distance, distance)
             
         distance_reward = math.exp(-(distance * DISTANCE_DECAY_RATE))
         
