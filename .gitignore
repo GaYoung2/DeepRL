@@ -9,6 +9,7 @@ data/checkpoint/
 data/bestpoint/
 data/for_run/
 data/saved_point/
+data/record/
 
 ### Python ###
 # Byte-compiled / optimized / DLL files

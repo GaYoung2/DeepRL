@@ -9,11 +9,8 @@ import PIL.ImageFilter
 import datetime
 import cv2
 
-# MODEL_FILENAME = 'sample_model.json' #Your model goes here
-# MODEL_FILENAME = 'D:\checkpoint\local_run/13893.json'
-# MODEL_FILENAME = 'data/saved_point/best_model.json'
-MODEL_FILENAME = '700551.json'
-# MODEL_FILENAME = '957458.json'
+MODEL_FILENAME = 'data/bestpoint/original/39130.json'
+random_respawn = True
 model = RlModel(None, False)
 with open(MODEL_FILENAME, 'r') as f:
     checkpoint_data = json.loads(f.read())
@@ -37,54 +34,67 @@ def get_image(car_client):
 #added by wb -> change starting point
 #---------------------------------------
 def get_next_starting_point(car_client):
-    
-        # Get the current state of the vehicle
-        car_state = car_client.getCarState()
 
-        # Pick a random road.
-        random_line_index = np.random.randint(0, high=len(road_points))
-        
-        # Pick a random position on the road. 
-        # Do not start too close to either end, as the car may crash during the initial run.
-        
-        random_interp = 0.3    # changed by GY 21-03-10
-        
+    # Get the current state of the vehicle
+    car_state = car_client.getCarState()
+
+    # Pick a random road.
+    random_line_index = np.random.randint(0, high=len(road_points))
+    
+    # Pick a random position on the road. 
+    # Do not start too close to either end, as the car may crash during the initial run.
+    
+    # added return to origin by Kang 21-03-10
+    if not random_respawn:
+        random_interp = 0.15    # changed by GY 21-03-10
+
         # Pick a random direction to face
         random_direction_interp = 0.4 # changed by GY 21-03-10
+    else:
+        random_interp = (np.random.random_sample() * 0.4) + 0.3 
+        random_direction_interp = np.random.random_sample()
 
-        # Compute the starting point of the car
-        random_line = road_points[random_line_index]
-        random_start_point = list(random_line[0])
-        random_start_point[0] += (random_line[1][0] - random_line[0][0])*random_interp
-        random_start_point[1] += (random_line[1][1] - random_line[0][1])*random_interp
+    # Compute the starting point of the car
+    random_line = road_points[random_line_index]
+    random_start_point = list(random_line[0])
+    random_start_point[0] += (random_line[1][0] - random_line[0][0])*random_interp
+    random_start_point[1] += (random_line[1][1] - random_line[0][1])*random_interp
 
-        # Compute the direction that the vehicle will face
-        # Vertical line
-        if (np.isclose(random_line[0][1], random_line[1][1])):
-            if (random_direction_interp > 0.5):
-                random_direction = (0,0,0)
-            else:
-                random_direction = (0, 0, math.pi)
-        # Horizontal line
-        elif (np.isclose(random_line[0][0], random_line[1][0])):
-            if (random_direction_interp > 0.5):
-                random_direction = (0,0,math.pi/2)
-            else:
-                random_direction = (0,0,-1.0 * math.pi/2)
+    # Compute the direction that the vehicle will face
+    # Vertical line
+    if (np.isclose(random_line[0][1], random_line[1][1])):
+        if (random_direction_interp > 0.5):
+            random_direction = (0,0,0)
+        else:
+            random_direction = (0, 0, math.pi)
+    # Horizontal line
+    elif (np.isclose(random_line[0][0], random_line[1][0])):
+        if (random_direction_interp > 0.5):
+            random_direction = (0,0,math.pi/2)
+        else:
+            random_direction = (0,0,-1.0 * math.pi/2)
 
-        # The z coordinate is always zero
-        random_start_point[2] = -0
-        return (random_start_point, random_direction)
+    # The z coordinate is always zero
+    random_start_point[2] = -0
+    return (random_start_point, random_direction)
 
 def init_road_points():
     road_points = []
     car_start_coords = [12961.722656, 6660.329102, 0]
-    with open(os.path.join(os.path.join('data/', 'data'), 'road_lines.txt'), 'r') as f:
+    road = ''
+    if not random_respawn:
+        road = 'road_lines.txt'
+    else:
+        road = 'origin_road_lines.txt'
+    with open(os.path.join(os.path.join('data', 'data'), road), 'r') as f:
         for line in f:
             points = line.split('\t')
             first_point = np.array([float(p) for p in points[0].split(',')] + [0])
             second_point = np.array([float(p) for p in points[1].split(',')] + [0])
             road_points.append(tuple((first_point, second_point)))
+
+    # Points in road_points.txt are in unreal coordinates
+    # But car start coordinates are not the same as unreal coordinates
     for point_pair in road_points:
         for point in point_pair:
             point[0] -= car_start_coords[0]
@@ -117,9 +127,10 @@ handles = {0 : cv2.cvtColor(cv2.imread(handle_dir+'0.png'), cv2.COLOR_BGR2GRAY),
 print('Running model')
 while(True):
     state_buffer = get_image(car_client)
-    angle = -int(prev_steering/0.05*4)
-    pre_handle = handles[angle].reshape(59,255,1)
-    state_buffer = np.concatenate([state_buffer, pre_handle], axis=2)
+    #with handle
+    # angle = -int(prev_steering/0.05*4)
+    # pre_handle = handles[angle].reshape(59,255,1)
+    # state_buffer = np.concatenate([state_buffer, pre_handle], axis=2)
     next_state, dummy = model.predict_state(state_buffer)
     next_control_signal = model.state_to_control_signals(next_state, car_client.getCarState())
 
