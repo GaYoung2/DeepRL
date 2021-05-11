@@ -1,15 +1,19 @@
 
 # Created by https://www.toptal.com/developers/gitignore/api/python,vscode
 # Edit at https://www.toptal.com/developers/gitignore?templates=python,vscode
-
+### Model Image ###
+Model.png
 ### json Folder ###
-data/1_layer_bestpoint/
-data/1_layer_checkpoint/local_run
-data/checkpoint/
-data/bestpoint/
-data/for_run/
-data/saved_point/
-data/record/
+saved_data/
+data/backup/
+data/backup/1_layer_bestpoint/
+data/backup/1_layer_checkpoint/local_run
+data/backup/checkpoint/
+data/backup/bestpoint/
+data/backup/for_run/
+data/backup/saved_point/
+data/backup/record/
+
 
 ### Python ###
 # Byte-compiled / optimized / DLL files

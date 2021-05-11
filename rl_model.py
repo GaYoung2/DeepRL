@@ -51,12 +51,12 @@ class RlModel():
         img_stack = Dense(128, name='rl_dense1', kernel_initializer=random_normal(stddev=0.01))(img_stack)
 
         #with handle
-        #img_stack=Dropout(0.2)(img_stack)
-        # BatchNormalization()
-        # img_stack = Dense(128, name='rl_dense2', kernel_initializer=random_normal(stddev=0.01))(img_stack)
-        # BatchNormalization()
-        # img_stack = Dense(128, name='rl_dense3', kernel_initializer=random_normal(stddev=0.01))(img_stack)
-        # BatchNormalization()
+        img_stack=Dropout(0.2)(img_stack)
+        BatchNormalization()
+        img_stack = Dense(128, name='rl_dense2', kernel_initializer=random_normal(stddev=0.01))(img_stack)
+        BatchNormalization()
+        img_stack = Dense(128, name='rl_dense3', kernel_initializer=random_normal(stddev=0.01))(img_stack)
+        BatchNormalization()
 
         output = Dense(self.__nb_actions, name='rl_output', kernel_initializer=random_normal(stddev=0.01))(img_stack)
 
@@ -66,7 +66,7 @@ class RlModel():
         self.__action_model.compile(optimizer=opt, loss='mean_squared_error')
         self.__action_model.summary()
 
-        keras.utils.plot_model(self.__action_model, 'a.png', show_shapes=True)
+        keras.utils.plot_model(self.__action_model, 'Model.png', show_shapes=True)
         
         # If we are using pretrained weights for the conv layers, load them and verify the first layer.
         if (weights_path is not None and len(weights_path) > 0):

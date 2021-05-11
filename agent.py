@@ -419,7 +419,6 @@ class DistributedAgent():
     def __get_image(self):
         image_response = self.__car_client.simGetImages([ImageRequest(0, 0, False, False)])[0]
         image1d = np.frombuffer(image_response.image_data_uint8, dtype=np.uint8)
-        print(type(image1d))
         
         image_rgba = image1d.reshape(image_response.height, image_response.width, 4)
         image_rgba = image_rgba[76:135,0:255,0:3].astype(float)
