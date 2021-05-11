@@ -168,18 +168,18 @@ class RlModel():
             self.__action_model.fit([pre_states], labels, epochs=1, batch_size=32, verbose=1)
             
             # Compute the gradients
-            new_weights = self.__action_model.get_weights()
-            gradients = []
-            dx = 0
-            for i in range(0, len(original_weights), 1):
-                gradients.append(new_weights[i] - original_weights[i])
-                dx += np.sum(np.sum(np.abs(new_weights[i]-original_weights[i])))
-            print('change in weights from training iteration: {0}'.format(dx))
+            # new_weights = self.__action_model.get_weights()
+            # gradients = []
+            # dx = 0
+            # for i in range(0, len(original_weights), 1):
+            #     gradients.append(new_weights[i] - original_weights[i])
+            #     dx += np.sum(np.sum(np.abs(new_weights[i]-original_weights[i])))
+            # print('change in weights from training iteration: {0}'.format(dx))
         
         print('END GET GRADIENT UPDATE DEBUG')
 
         # Numpy arrays are not JSON serializable by default
-        return [w.tolist() for w in gradients]
+        #return [w.tolist() for w in gradients]
 
     # Performs a state prediction given the model input
     # def predict_state(self, observation):

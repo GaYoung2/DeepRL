@@ -13,7 +13,7 @@ import pickle as pkl
 # for start from the model added by kang 21-03-10
 # MODEL_FILENAME = 'data/saved_point/best_model.json'
 MODEL_FILENAME = None
-random_respawn = True
+random_respawn = False
 EXPERIENCE_FILENAME = 'latest.pkl'
 class DistributedAgent():
     def __init__(self):
@@ -28,7 +28,7 @@ class DistributedAgent():
         self.__max_epoch_runtime_sec = float(30)
         self.__replay_memory_size = 50
         self.__batch_size = 32
-        self.__experiment_name = 'original'
+        self.__experiment_name = 'original+static'
         self.__train_conv_layers = False
         self.__epsilon = 1
         self.__percent_full = 0
@@ -37,7 +37,6 @@ class DistributedAgent():
         self.__handles = {}
         self.__batch_update_frequency = 10
         self.__weights_path = None    
-        self.__local_run = True
         self.__car_client = None
         self.__car_controls = None
         # self.__minibatch_dir = os.path.join(self.__data_dir, 'minibatches')
@@ -45,8 +44,6 @@ class DistributedAgent():
         # self.__make_dir_if_not_exist(self.__minibatch_dir)
         # self.__make_dir_if_not_exist(self.__output_model_dir)
         self.__last_model_file = ''
-        self.__possible_ip_addresses = []
-        self.__trainer_ip_address = None
         self.__experiences = {}
         self.prev_steering = 0
         self.__init_road_points()
