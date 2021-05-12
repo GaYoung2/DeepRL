@@ -28,7 +28,7 @@ class DistributedAgent():
         self.__max_epoch_runtime_sec = float(30)
         self.__replay_memory_size = 50
         self.__batch_size = 32
-        self.__experiment_name = 'handle'
+        self.__experiment_name = 'original+static'
         self.__train_conv_layers = False
         self.__epsilon = 1
         self.__percent_full = 0
@@ -37,7 +37,6 @@ class DistributedAgent():
         self.__handles = {}
         self.__batch_update_frequency = 10
         self.__weights_path = None    
-        self.__local_run = True
         self.__car_client = None
         self.__car_controls = None
         # self.__minibatch_dir = os.path.join(self.__data_dir, 'minibatches')
@@ -45,8 +44,6 @@ class DistributedAgent():
         # self.__make_dir_if_not_exist(self.__minibatch_dir)
         # self.__make_dir_if_not_exist(self.__output_model_dir)
         self.__last_model_file = ''
-        self.__possible_ip_addresses = []
-        self.__trainer_ip_address = None
         self.__experiences = {}
         self.prev_steering = 0
         self.__init_road_points()
@@ -113,6 +110,7 @@ class DistributedAgent():
             except msgpackrpc.error.TimeoutError:
                 print('Lost connection to AirSim while fillling replay memory. Attempting to reconnect.')
                 self.__connect_to_airsim()
+                
     def __connect_to_airsim(self):
         attempt_count = 0
         while True:
@@ -184,9 +182,9 @@ class DistributedAgent():
                 # The Agent should occasionally pick random action instead of best action
                 do_greedy = np.random.random_sample()
                 pre_state = copy.deepcopy(state_buffer)
-                angle = -int(self.prev_steering/0.05*4)
-                pre_handle = self.__handles[angle].reshape(59,255,1)
-                pre_state = np.concatenate([pre_state, pre_handle], axis=2)
+                # angle = -int(self.prev_steering/0.05*4)
+                # pre_handle = self.__handles[angle].reshape(59,255,1)
+                # pre_state = np.concatenate([pre_state, pre_handle], axis=2)
                 if (do_greedy < self.__epsilon or always_random):
                     num_random += 1
                     next_state = self.__model.get_random_state()
@@ -208,9 +206,12 @@ class DistributedAgent():
 
                 # Observe outcome and compute reward from action
                 state_buffer = self.__get_image()
-                angle = -int(self.prev_steering/0.05*4)
-                post_handle = self.__handles[angle].reshape(59,255,1)
-                post_state = np.concatenate([state_buffer, post_handle],axis=2)
+
+                # angle = -int(self.prev_steering/0.05*4)
+                # post_handle = self.__handles[angle].reshape(59,255,1)
+                # post_state = np.concatenate([state_buffer, post_handle],axis=2)
+                post_state = state_buffer #deleted when append handle
+
                 car_state = self.__car_client.getCarState()
                 collision_info = self.__car_client.getCollisionInfo()
                 reward, far_off = self.__compute_reward(collision_info, car_state)
@@ -336,7 +337,8 @@ class DistributedAgent():
                 with open(record_file_name, 'w') as f: #saving information of model by Seo 21-05-03
                     print('Add info to {0}'.format(record_file_name))
                     f.write(f'Total reward : {self.__total_reward}\n')
-                    f.write(f'Stare Time : {self.__the_start_time}\n')
+                    f.write(f'Start Time : {self.__the_start_time}\n')
+                    f.write(f'Epoch Time : {datetime.datetime.utcnow()}')
                     f.write(f'Drive Time : {self.__drive_time}\n')
                 with open (saved_file_name, 'w') as f:
                     f.write(checkpoint_str)
