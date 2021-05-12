@@ -55,6 +55,7 @@ class DistributedAgent():
         self.__num_of_trial = 0
         self.__the_start_time = datetime.datetime.utcnow()
         self.__total_reward = 0
+        self.__best_total_reward = 0
         self.__drive_time = 0
         
     def start(self):  
@@ -312,11 +313,11 @@ class DistributedAgent():
             
             # 운행시간을 이용해서 가장 오래 걸린 시간을 best policy로 보고, best policy를 따로 저장. #added 2021-03-09 by kang
             # 만약 이번 회차의 운행시간이 가장 긴 운행시간일 경우에 best policy 저장
-            if drive_time > self.__best_drive and self.__epsilon<0.2:
+            if self.__total_reward > self.__best_total_reward and self.__epsilon<0.2:
                 print("="*30)
                 print("New Best Policy!!!!!!")
                 print("="*30)
-                self.__best_drive = drive_time
+                self.__best_total_reward = self.__total_reward
                 bestpoint_dir = os.path.join(os.path.join(self.__data_dir, 'bestpoint'), self.__experiment_name)
                 record_dir = os.path.join(os.path.join(self.__data_dir,'record'),self.__experiment_name)
                 if not os.path.isdir(bestpoint_dir):
