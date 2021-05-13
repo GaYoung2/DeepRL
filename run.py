@@ -9,7 +9,7 @@ import PIL.ImageFilter
 import datetime
 import cv2
 
-MODEL_FILENAME = 'data/bestpoint/original/39130.json'
+MODEL_FILENAME = 'data/bestpoint/handle+static/336724.json'
 random_respawn = True
 model = RlModel(None, False)
 with open(MODEL_FILENAME, 'r') as f:
@@ -127,10 +127,10 @@ handles = {0 : cv2.cvtColor(cv2.imread(handle_dir+'0.png'), cv2.COLOR_BGR2GRAY),
 print('Running model')
 while(True):
     state_buffer = get_image(car_client)
-    #with handle
-    # angle = -int(prev_steering/0.05*4)
-    # pre_handle = handles[angle].reshape(59,255,1)
-    # state_buffer = np.concatenate([state_buffer, pre_handle], axis=2)
+    # with handle
+    angle = -int(prev_steering/0.05*4)
+    pre_handle = handles[angle].reshape(59,255,1)
+    state_buffer = np.concatenate([state_buffer, pre_handle], axis=2)
     next_state, dummy = model.predict_state(state_buffer)
     next_control_signal = model.state_to_control_signals(next_state, car_client.getCarState())
     car_controls.steering = next_control_signal[0]
