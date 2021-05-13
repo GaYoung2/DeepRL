@@ -3,22 +3,29 @@ import shutil
 from time import sleep
 import cv2
 from keras.engine.input_layer import Input
+from keras.models import load_model
 from rl_model import RlModel
 from airsim_client import *
 import datetime
 import copy
 import json
 import pickle as pkl
+from lane_detection import Lanes, road_lines
 
 # for start from the model added by kang 21-03-10
 # MODEL_FILENAME = 'data/saved_point/best_model.json'
 MODEL_FILENAME = None
+
+# load lane_net model
+trained_model  = load_model('full_CNN_model.h5')
 random_respawn = False
 EXPERIENCE_FILENAME = 'latest.pkl'
 class DistributedAgent():
-    def __init__(self):
+    def __init__(self, use_handle=True, use_lane = True):
         self.__model_buffer = None
         self.__model = None
+        self.__lane_model = trained_model
+        self.__lanes = Lanes()
         self.__airsim_started = False
         self.__data_dir = 'data/'
         self.__handle_dir = 'data/handle_image/'
@@ -50,18 +57,22 @@ class DistributedAgent():
         self.__init_reward_points()
         self.__init_handle_images()
         self.__best_drive = datetime.timedelta(seconds=-1)  #added 2021-03-09 by kang
-        self.__best_model = None  #added 2021-03-09 by kang
-        self.__best_epsilon = 1
-        self.__num_of_trial = 0
+        ### removed by Kang 21-05-13 ###
+        # self.__best_model = None  #added 2021-03-09 by kang
+        # self.__best_epsilon = 1
+        # self.__num_of_trial = 0
+        ################################
         self.__the_start_time = datetime.datetime.utcnow()
         self.__total_reward = 0
         self.__drive_time = 0
+        self.__use_handle = use_handle
+        self.__use_lane = use_lane
         
     def start(self):  
         self.__run_function()
 
     def __run_function(self):
-        self.__model = RlModel(self.__weights_path, self.__train_conv_layers)
+        self.__model = RlModel(self.__weights_path, self.__train_conv_layers, use_handle=self.__use_handle, use_lane=self.__use_lane)
         
         # Read json model file from here by Kang 21-03-10
         if MODEL_FILENAME != None:
@@ -87,8 +98,12 @@ class DistributedAgent():
                 if self.__percent_full < 100 and MODEL_FILENAME == None:    # Model이 있을 경우에는 experiences와 epsilon을 불러오기 때문에 replay memory 채울필요 X
                     print('Filling replay memory...')
                     self.__run_airsim_epoch(MODEL_FILENAME == None)
-                    self.__percent_full = 100.0 * len(self.__experiences['actions'])/self.__replay_memory_size
-                    print('Replay memory now contains {0} members. ({1}% full)'.format(len(self.__experiences['actions']), self.__percent_full))
+                    try:
+                        self.__percent_full = 100.0 * len(self.__experiences['actions'])/self.__replay_memory_size
+                        print('Replay memory now contains {0} members. ({1}% full)'.format(len(self.__experiences['actions']), self.__percent_full))
+                    except:
+                        print('experience memory is empty, fill again.')
+
                 else:
                     if (self.__model is not None):
                         experiences, frame_count, self.__drive_time = self.__run_airsim_epoch(False)
@@ -138,13 +153,23 @@ class DistributedAgent():
         self.__car_client.simSetPose(Pose(Vector3r(starting_points[0], starting_points[1], starting_points[2]), AirSimClientBase.toQuaternion(starting_direction[0], starting_direction[1], starting_direction[2])), True)
         self.__car_controls.steering = 0
         time.sleep(1.5)
+        # move place up to get time to load lane detect model
+        state_buffer, state_lane = self.__get_image(use_lane=self.__use_lane)
+        if self.__use_lane:
+            state_lane.shape = (59,255,1)
+            state_buffer = np.concatenate([state_buffer, state_lane],axis=2)
+
+        if self.__use_handle:
+            angle = -int(self.prev_steering/0.05*4)
+            post_handle = self.__handles[angle].reshape(59,255,1)
+            cv2.imshow('handle',post_handle)
+            state_buffer = np.concatenate([state_buffer, post_handle],axis=2)
+
         self.__car_controls.throttle = 1
         self.__car_controls.brake = 0
         self.prev_steering = 0
         self.__car_client.setCarControls(self.__car_controls)
         time.sleep(1.5)
-        state_buffer = self.__get_image()
-
         done = False
         actions = []
         pre_states = []
@@ -181,9 +206,7 @@ class DistributedAgent():
                 # The Agent should occasionally pick random action instead of best action
                 do_greedy = np.random.random_sample()
                 pre_state = copy.deepcopy(state_buffer)
-                # angle = -int(self.prev_steering/0.05*4)
-                # pre_handle = self.__handles[angle].reshape(59,255,1)
-                # pre_state = np.concatenate([pre_state, pre_handle], axis=2)
+                
                 if (do_greedy < self.__epsilon or always_random):
                     num_random += 1
                     next_state = self.__model.get_random_state()
@@ -203,6 +226,7 @@ class DistributedAgent():
                     self.__car_controls.steering = -1.0
                 self.prev_steering = self.__car_controls.steering
                 print('normalized steering : ', self.prev_steering)
+
                 self.__car_controls.throttle = next_control_signals[1]
                 self.__car_controls.brake = next_control_signals[2]
                 self.__car_client.setCarControls(self.__car_controls)
@@ -211,12 +235,18 @@ class DistributedAgent():
                 time.sleep(wait_delta_sec)
 
                 # Observe outcome and compute reward from action
-                state_buffer = self.__get_image()
+                state_buffer, state_lane = self.__get_image(use_lane=self.__use_lane)
+                # (59,255,3) ()
+                if self.__use_lane:
+                    state_lane.shape = (59,255,1)
+                    state_buffer = np.concatenate([state_buffer, state_lane],axis=2)
 
-                # angle = -int(self.prev_steering/0.05*4)
-                # post_handle = self.__handles[angle].reshape(59,255,1)
-                # post_state = np.concatenate([state_buffer, post_handle],axis=2)
-                post_state = state_buffer #deleted when append handle
+                if self.__use_handle:
+                    angle = -int(self.prev_steering/0.05*4)
+                    post_handle = self.__handles[angle].reshape(59,255,1)
+                    cv2.imshow('handle',post_handle)
+                    state_buffer = np.concatenate([state_buffer, post_handle],axis=2)
+                post_state = state_buffer
 
                 car_state = self.__car_client.getCarState()
                 collision_info = self.__car_client.getCollisionInfo()
@@ -292,7 +322,7 @@ class DistributedAgent():
     def __publish_batch_and_update_model(self, batches, batches_count, drive_time): # updateed 2021-03-09 by kang
         # Train and get the gradients
         print('Publishing epoch data and getting latest model from parameter server...')
-        gradients = self.__model.get_gradient_update_from_batches(batches) 
+        # gradients = self.__model.get_gradient_update_from_batches(batches) 
     
         if (self.__num_batches_run > self.__batch_update_frequency + self.__last_checkpoint_batch_count):
             self.__model.update_critic()
@@ -310,19 +340,18 @@ class DistributedAgent():
                 except OSError as e:
                     if e.errno != errno.EEXIST:
                         raise
-                    EXPERIENCE_FILENAME
-
-            # saving experiences by every update
-            tmp = os.path.join(os.path.join(checkpoint_dir, 'experiencedata'),'{0}.pkl'.format(self.__num_batches_run))
-            
-            with open(tmp,'wb') as save_file:
-                pkl.dump([self.__experiences, self.__epsilon, self.__best_drive], save_file)
-                save_file.close()
+            #### saving evey experiences is waist of memory ### by Kang
+            # # saving experiences by every update
+            # tmp = os.path.join(os.path.join(checkpoint_dir, 'experiencedata'),'{0}.pkl'.format(self.__num_batches_run))
+            # with open(tmp,'wb') as save_file:
+            #     pkl.dump([self.__experiences, self.__epsilon, self.__best_drive], save_file)
+            #     save_file.close()
+            ####################################################
             file_name = os.path.join(checkpoint_dir,'{0}.json'.format(self.__num_batches_run)) 
             # Removed cuz waist of memory. by Kang 21-03-11
-            with open(file_name, 'w') as f:
-                print('Checkpointing to {0}'.format(file_name))
-                f.write(checkpoint_str)
+            # with open(file_name, 'w') as f:
+            #     print('Checkpointing to {0}'.format(file_name))
+            #     f.write(checkpoint_str)
 
             self.__last_checkpoint_batch_count = self.__num_batches_run
             
@@ -335,30 +364,41 @@ class DistributedAgent():
                 self.__best_drive = drive_time
                 bestpoint_dir = os.path.join(os.path.join(self.__data_dir, 'bestpoint'), self.__experiment_name)
                 record_dir = os.path.join(os.path.join(self.__data_dir,'record'),self.__experiment_name)
+                
+                file_name = os.path.join(bestpoint_dir,'{0}.json'.format(self.__num_batches_run)) 
+                record_file_name = os.path.join(record_dir,'{0}.txt'.format(self.__num_batches_run))
+                # if dir is not exist, make directory by Kang 21-05-13
                 if not os.path.isdir(bestpoint_dir):
                     try:
                         os.makedirs(bestpoint_dir)
                     except OSError as e:
                         if e.errno != errno.EEXIST:
                             raise
-                file_name = os.path.join(bestpoint_dir,'{0}.json'.format(self.__num_batches_run)) 
-                saved_file_name = os.path.join(os.path.join(self.__data_dir, 'saved_point'), 'best_model.json')
-                record_file_name = os.path.join(record_dir,'{0}.txt'.format(self.__num_batches_run))
+                if not os.path.isdir(record_dir):
+                    try:
+                        os.makedirs(record_dir)
+                    except OSError as e:
+                        if e.errno != errno.EEXIST:
+                            raise
+                # add {self.__num_batches_run}.json file to ./data/bestpoint/{self.__experiment_name}/
                 with open(file_name, 'w') as f:
                     print('Add Best Policy to {0}'.format(file_name))
                     f.write(checkpoint_str)
+                
                 # saving bestpoint model and experiences to saved_point folder by Kang 21-03-12
+                # saving {self.__num_batches_run}.json file to ./data/record/{self.__experiment_name}/
                 with open(record_file_name, 'w') as f: #saving information of model by Seo 21-05-03
                     print('Add info to {0}'.format(record_file_name))
                     f.write(f'Total reward : {self.__total_reward}\n')
                     f.write(f'Start Time : {self.__the_start_time}\n')
                     f.write(f'Epoch Time : {datetime.datetime.utcnow()}')
                     f.write(f'Drive Time : {self.__drive_time}\n')
-                with open (saved_file_name, 'w') as f:
-                    f.write(checkpoint_str)
+
+                
+
                 # 처음부터 시작할때 최근의 상태를 알기 위하여 pickle로 experiences, epsilon 저장.   
                 
-                save_file = open(os.path.join(os.path.join(self.__data_dir, 'saved_point'), EXPERIENCE_FILENAME),'wb')
+                save_file = open(os.path.join(bestpoint_dir, f'{self.__num_batches_run}'+EXPERIENCE_FILENAME),'wb')
                 pkl.dump([self.__experiences, self.__epsilon, self.__num_batches_run], save_file)
                 save_file.close()
 
@@ -374,11 +414,11 @@ class DistributedAgent():
             #     self.__experiences = self.__best_experiences
             #     self.__epsilon = self.__best_epsilon
             #     self.__num_of_trial = 0
-            self.__num_of_trial += 1
+            # self.__num_of_trial += 1
 
     def __compute_reward(self, collision_info, car_state):
-        #Define some constant parameters for the reward function
-        THRESH_DIST = 2.5                # The maximum distance from the center of the road to compute the reward function
+        # Define some constant parameters for the reward function
+        THRESH_DIST = 4.0                # The maximum distance from the center of the road to compute the reward function
         DISTANCE_DECAY_RATE = 1.2        # The rate at which the reward decays for the distance function
 
         # If the car has collided, the reward is always zero
@@ -416,17 +456,28 @@ class DistributedAgent():
         
         return distance_reward, distance > THRESH_DIST
 
-    def __get_image(self):
-        image_response = self.__car_client.simGetImages([ImageRequest(0, 0, False, False)])[0]
+    def __get_image(self, use_lane=True):
+        image_response = self.__car_client.simGetImages([ImageRequest(0, AirSimImageType.Scene, False, False)])[0]
         image1d = np.frombuffer(image_response.image_data_uint8, dtype=np.uint8)
         
         image_rgba = image1d.reshape(image_response.height, image_response.width, 4)
+        img_4_to_3 = image_rgba[:,:,0:3]
+        cv2.imshow('original',img_4_to_3)
+        lane_detected=None
+        if use_lane:
+            lane_detected = road_lines(img_4_to_3, self.__lanes, self.__lane_model)
+            lane_detected = lane_detected[76:135,0:255,1].astype(float)*255
+            cv2.imshow('cutted_lane',lane_detected)
         image_rgba = image_rgba[76:135,0:255,0:3].astype(float)
         image_rgba = image_rgba.reshape(59, 255, 3)
-        dst=cv2.resize(image_rgba,dsize=(image_response.width*2,image_response.height*2),interpolation=cv2.INTER_AREA)
-        cv2.imshow('image',dst)
+        
+
+        
+        
+        cv2.imshow('cutted',image_rgba)
+
         cv2.waitKey(1)
-        return image_rgba
+        return image_rgba, lane_detected
 
     def __init_road_points(self):
         self.__road_points = []
@@ -508,16 +559,24 @@ class DistributedAgent():
 
     def __init_handle_images(self):
         self.__handles = {0 : cv2.cvtColor(cv2.imread(self.__handle_dir+'0.png'), cv2.COLOR_BGR2GRAY),
-                        20 : cv2.cvtColor(cv2.imread(self.__handle_dir+'right20.png'), cv2.COLOR_BGR2GRAY),
-                        40 : cv2.cvtColor(cv2.imread(self.__handle_dir+'right40.png'), cv2.COLOR_BGR2GRAY),
-                        60 : cv2.cvtColor(cv2.imread(self.__handle_dir+'right60.png'), cv2.COLOR_BGR2GRAY),
-                        80 : cv2.cvtColor(cv2.imread(self.__handle_dir+'right80.png'), cv2.COLOR_BGR2GRAY),
-                        -20 : cv2.cvtColor(cv2.imread(self.__handle_dir+'left20.png'), cv2.COLOR_BGR2GRAY),
-                        -40 : cv2.cvtColor(cv2.imread(self.__handle_dir+'left40.png'), cv2.COLOR_BGR2GRAY),
-                        -60 : cv2.cvtColor(cv2.imread(self.__handle_dir+'left60.png'), cv2.COLOR_BGR2GRAY),
-                        -80 : cv2.cvtColor(cv2.imread(self.__handle_dir+'left80.png'), cv2.COLOR_BGR2GRAY)}
+                        -20 : cv2.cvtColor(cv2.imread(self.__handle_dir+'right20.png'), cv2.COLOR_BGR2GRAY),
+                        -40 : cv2.cvtColor(cv2.imread(self.__handle_dir+'right40.png'), cv2.COLOR_BGR2GRAY),
+                        -60 : cv2.cvtColor(cv2.imread(self.__handle_dir+'right60.png'), cv2.COLOR_BGR2GRAY),
+                        -80 : cv2.cvtColor(cv2.imread(self.__handle_dir+'right80.png'), cv2.COLOR_BGR2GRAY),
+                        20 : cv2.cvtColor(cv2.imread(self.__handle_dir+'left20.png'), cv2.COLOR_BGR2GRAY),
+                        40 : cv2.cvtColor(cv2.imread(self.__handle_dir+'left40.png'), cv2.COLOR_BGR2GRAY),
+                        60 : cv2.cvtColor(cv2.imread(self.__handle_dir+'left60.png'), cv2.COLOR_BGR2GRAY),
+                        80 : cv2.cvtColor(cv2.imread(self.__handle_dir+'left80.png'), cv2.COLOR_BGR2GRAY)}
 
 print('If you want to load best policy, Enter "y" ,otherwise "n"')
 MODEL_FILENAME = 'best_model.json' if input()=='y' else None
-agent = DistributedAgent()
+print('If you want to use handle, Enter "y", otherwise "n"')
+handle_choose = True
+if input() == 'y': pass
+else: handle_choose = False
+print('If you wnat to use lane detection, Enter "y", otherwise "n"')
+lane_choose = True
+if input() == 'y': pass
+else: lane_choose = False 
+agent = DistributedAgent(use_handle=handle_choose, use_lane = lane_choose)
 agent.start()

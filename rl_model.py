@@ -26,18 +26,26 @@ K.set_session(session)
 np.set_printoptions(threshold=sys.maxsize)  
 # A wrapper class for the DQN model
 class RlModel():
-    def __init__(self, weights_path, train_conv_layers):
+    def __init__(self, weights_path, train_conv_layers, use_handle = True, use_lane = True):
         #self.__angle_values = [-1, -0.5, 0, 0.5, 1]
         self.__angle_values = [-0.5, -0.25, 0, 0.25, 0.5] #continuous state
 
         self.__nb_actions = 5
         # self.__nb_actions = 3
         self.__gamma = 0.99
+        self.__use_handle = use_handle
+        self.__use_lane = use_lane
 
         #Define the model
         activation = 'relu'
-        pic_input = Input(shape=(59,255,3)) #without handle
-        #pic_input = Input(shape=(59,255,4)) #with handle
+
+        if self.__use_handle and self.__use_lane:
+            pic_input = Input(shape=(59,255,5)) #with handle and with lane
+        elif self.__use_handle or self.__use_lane:
+            pic_input = Input(shape=(59,255,4)) #only with handle or lane
+        else:
+            pic_input = Input(shape=(59,255,3)) #without handle and lane
+        
         
         img_stack = Conv2D(16, (3, 3), name='convolution0', padding='same', activation=activation, trainable=train_conv_layers)(pic_input)
         img_stack = MaxPooling2D(pool_size=(2,2))(img_stack)
@@ -190,9 +198,12 @@ class RlModel():
     def predict_state(self, observation):
         # Our model only predicts on a single state.
         # Take the latest image
-
-        #observation = observation.reshape(1,59,255,4) #with handle
-        observation = observation.reshape(1,59,255,3) #without handle
+        if self.__use_handle and self.__use_lane:
+            observation = observation.reshape(1,59,255,5) #with handle and with lane
+        elif self.__use_handle or self.__use_lane:
+            observation = observation.reshape(1,59,255,4) #only with handle or lane
+        else:
+            observation = observation.reshape(1,59,255,3) #without handle and lane
 
         with self.__action_context.as_default():
             predicted_qs = self.__action_model.predict([observation])
