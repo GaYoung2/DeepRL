@@ -12,6 +12,10 @@ import json
 import pickle as pkl
 from lane_detection import Lanes, road_lines
 
+# 액션을 취하는 간격 약 0.05초
+# airsim simulator에서는 속도단위는 m/s
+# 액션 간격 x 속도 = 운행거리(m단위)
+
 # for start from the model added by kang 21-03-10
 # MODEL_FILENAME = 'data/saved_point/best_model.json'
 MODEL_FILENAME = None
@@ -35,7 +39,7 @@ class DistributedAgent():
         self.__max_epoch_runtime_sec = float(50)
         self.__replay_memory_size = 50
         self.__batch_size = 32
-        self.__experiment_name = 'original+static'
+        self.__experiment_name = 'deep+handle+speed'
         self.__train_conv_layers = False
         self.__epsilon = 1
         self.__percent_full = 0
@@ -65,9 +69,12 @@ class DistributedAgent():
         self.__the_start_time = datetime.datetime.utcnow()
         self.__total_reward = 0
         self.__drive_time = 0
+        ### 분기를 나누기 위해 더해진 3개의 변수들 ###
         self.__use_handle = use_handle
         self.__use_lane = use_lane
         self.__use_speed = use_speed
+        ###########################################
+        self.__drive_distance = 0   # reward에 지나간 거리 추가
         
     def start(self):  
         self.__run_function()
@@ -166,13 +173,8 @@ class DistributedAgent():
             cv2.imshow('handle',post_handle)
 
             state_buffer = np.concatenate([state_buffer, post_handle], axis=2)
-        if self.__use_speed:
-            self.__speed = self.__car_client.getCarState().speed
-            state_speed = np.ones((59,255,1))
-            state_speed.fill(self.__speed)
-            state_buffer = np.concatenate([state_buffer, state_speed], axis=2)
-
-        self.__car_controls.throttle = 1
+        
+        self.__car_controls.throttle = 0.5
         self.__car_controls.brake = 0
         self.prev_steering = 0
         self.__car_client.setCarControls(self.__car_controls)
@@ -184,6 +186,16 @@ class DistributedAgent():
         rewards = []
         predicted_rewards = []
         car_state = self.__car_client.getCarState()
+        if self.__use_speed:
+            self.__speed = car_state.speed
+            state_speed = np.ones((59,255,1))
+            state_speed.fill(self.__speed)
+            print('speed:',self.__speed)
+            uint_img = np.array(state_speed*3315).astype('uint8')
+            grayImage = cv2.cvtColor(uint_img, cv2.COLOR_GRAY2BGR)
+            cv2.imshow('test',grayImage)
+            state_buffer = np.concatenate([state_buffer, state_speed], axis=2)
+
         self.__total_reward = 0
         start_time = datetime.datetime.utcnow()
         end_time = start_time + datetime.timedelta(seconds=self.__max_epoch_runtime_sec)
@@ -196,7 +208,7 @@ class DistributedAgent():
             utc_now = datetime.datetime.utcnow()
             
             if (collision_info.has_collided or car_state.speed < 0.5 or utc_now > end_time or far_off):
-                print(collision_info.has_collided)
+                print('end by collision?',collision_info.has_collided)
                 print('Start time: {0}, end time: {1}'.format(start_time, utc_now), file=sys.stderr)
                 print('Time elapsed: {0}'.format(utc_now-self.__the_start_time))
                 print('Current best drive: {0}'.format(self.__best_drive))
@@ -204,11 +216,13 @@ class DistributedAgent():
                 self.__car_controls.throttle = 0
                 self.__car_controls.brake = 1
                 self.__car_client.setCarControls(self.__car_controls)
+                self.__drive_distance = 0
                 time.sleep(4)
                 if (utc_now > end_time):
                     print('timed out.')
                     print('Full autonomous run finished at {0}'.format(utc_now), file=sys.stderr)
                 done = True
+                
                 sys.stderr.flush()
             else:
                 # The Agent should occasionally pick random action instead of best action
@@ -222,12 +236,18 @@ class DistributedAgent():
                     predicted_reward = 0
                     print('Do random {0}'.format(next_state))
                 else:
-                    next_state, next_throttle, predicted_reward = self.__model.predict_state(pre_state)
-                    # next_state, predicted_reward = self.__model.predict_state(pre_state)
+                    if self.__use_speed:
+                        next_state, next_throttle, predicted_reward = self.__model.predict_state(pre_state,self.__use_speed)
+                    else:
+                        next_state, predicted_reward = self.__model.predict_state(pre_state, self.__use_speed)
                     print('Model predicts {0}'.format(next_state))
+
                 # Convert the selected state to a control signal
-                # next_control_signals = self.__model.state_to_control_signals(next_state, self.__car_client.getCarState())
-                next_control_signals = self.__model.state_to_control_signals(next_state, next_throttle)
+                if self.__use_speed:
+                    next_control_signals = self.__model.state_to_control_signals(next_state, car_throttle=next_throttle, use_speed=self.__use_speed)
+                else:
+                    next_control_signals = self.__model.state_to_control_signals(next_state, car_state=self.__car_client.getCarState())
+                
                 # Take the action
                 self.__car_controls.steering = self.prev_steering + next_control_signals[0]
                 # print('prev {0} -> changed {1}'.format(self.prev_steering, self.__car_controls.steering))
@@ -265,7 +285,10 @@ class DistributedAgent():
                     self.__speed = self.__car_client.getCarState().speed
                     state_speed = np.ones((59,255,1))
                     state_speed.fill(self.__speed)
-                    print('current speed', self.__speed)
+                    print('speed:',self.__speed)
+                    uint_img = np.array(state_speed*3315).astype('uint8')
+                    grayImage = cv2.cvtColor(uint_img, cv2.COLOR_GRAY2BGR)
+                    cv2.imshow('test',grayImage)
                     state_buffer = np.concatenate([state_buffer, state_speed], axis=2)
 
                 post_state = state_buffer
@@ -450,7 +473,7 @@ class DistributedAgent():
         
         # If the car is stopped, the reward is always zero
         speed = car_state.speed
-        if (speed < 2 or collision_info==True):
+        if (speed < 0.5 or collision_info==True):
             return 0.0, True
         
         #Get the car position
@@ -473,10 +496,18 @@ class DistributedAgent():
                 local_distance = np.linalg.norm(proj - car_point)
             
             distance = min(local_distance, distance)
-            
-        distance_reward = math.exp(-(distance * DISTANCE_DECAY_RATE))
         
-        return distance_reward, distance > THRESH_DIST
+        # reward로 넣어줄때 m단위로 넣으면 너무 과적합될것 같아서 km단위로 넣기로 결정.
+        # 위에 방법을 취소하고, Decay_rate만큼을 곱한 distance를 뺀다!
+        self.__drive_distance += 0.05 * speed /1000
+        
+        distance_reward = math.exp(-(distance * DISTANCE_DECAY_RATE))
+
+        if self.__use_speed:
+            reward = -(distance * DISTANCE_DECAY_RATE) + self.__drive_distance
+            return reward, distance > THRESH_DIST
+        else:
+            return distance_reward, distance > THRESH_DIST
 
     def __get_image(self, use_lane=True):
         image_response = self.__car_client.simGetImages([ImageRequest(0, AirSimImageType.Scene, False, False)])[0]
