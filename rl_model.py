@@ -26,25 +26,34 @@ K.set_session(session)
 np.set_printoptions(threshold=sys.maxsize)  
 # A wrapper class for the DQN model
 class RlModel():
-    def __init__(self, weights_path, train_conv_layers, use_handle = True, use_lane = True):
+    def __init__(self, weights_path, train_conv_layers, use_handle = True, use_lane = True, use_speed = True):
         #self.__angle_values = [-1, -0.5, 0, 0.5, 1]
         self.__angle_values = [-0.5, -0.25, 0, 0.25, 0.5] #continuous state
+        print('handle, lane, speed', use_handle,use_lane,use_speed)
 
         self.__nb_actions = 5
-        # self.__nb_actions = 3
+        self.__nb_speed_actions = 2
         self.__gamma = 0.99
         self.__use_handle = use_handle
         self.__use_lane = use_lane
+        self.__use_speed = use_speed
 
         #Define the model
         activation = 'relu'
 
-        if self.__use_handle and self.__use_lane:
-            pic_input = Input(shape=(59,255,5)) #with handle and with lane
-        elif self.__use_handle or self.__use_lane:
-            pic_input = Input(shape=(59,255,4)) #only with handle or lane
-        else:
-            pic_input = Input(shape=(59,255,3)) #without handle and lane
+        option = np.array([use_handle,use_lane,use_speed])
+        depth_check = np.array([True,True,True])
+        depth = 3 + len(depth_check[option])
+        self.__depth = depth
+        pic_input = Input(shape=(59,255,self.__depth))
+        # if self.__use_handle and self.__use_lane and self.__use_speed:
+        #     pic_input = Input(shape=(59,255,6)) #with handle and with lane and with handle and with speed
+        # elif (self.__use_handle and self.__use_lane) or (self.__use_lane and self.__use_speed) or (self.__use_handle and self.__use_speed):
+        #     pic_input = Input(shape=(59,255,5)) #with handle and with lane or with handle and with speed
+        # elif self.__use_handle or self.__use_lane or self.__use_speed:
+        #     pic_input = Input(shape=(59,255,4)) #only with handle or lane
+        # else:
+        #     pic_input = Input(shape=(59,255,3)) #without handle and lane
         
         
         img_stack = Conv2D(16, (3, 3), name='convolution0', padding='same', activation=activation, trainable=train_conv_layers)(pic_input)
@@ -65,13 +74,27 @@ class RlModel():
         BatchNormalization()
         img_stack = Dense(128, name='rl_dense3', kernel_initializer=random_normal(stddev=0.01))(img_stack)
         BatchNormalization()
-
+        
+        if self.__use_speed:
+            output_throttle = Dense(self.__nb_speed_actions, name='rl_throttle_output', kernel_initializer=random_normal(stddev=0.01), activation='sigmoid')(img_stack)
         output = Dense(self.__nb_actions, name='rl_output', kernel_initializer=random_normal(stddev=0.01))(img_stack)
 
         opt = Adam()
-        self.__action_model = Model(inputs=[pic_input], outputs=output)
-
-        self.__action_model.compile(optimizer=opt, loss='mean_squared_error')
+        if self.__use_speed:
+            self.__action_model = Model(inputs=[pic_input], outputs=[output, output_throttle])
+            losses = {
+                "rl_output": "mean_squared_error",
+                "rl_throttle_output": "mean_squared_error",
+            }
+            lossWeights = {"rl_output":2.0, "rl_throttle_output": 1.0}
+        else:
+            self.__action_model = Model(inputs=[pic_input], outputs=output)
+            losses = {
+                "rl_output": "mean_squared_error"
+            }
+            lossWeights = {"rl_output":1.0}
+        
+        self.__action_model.compile(optimizer=opt, loss=losses, loss_weights=lossWeights)
         self.__action_model.summary()
 
         keras.utils.plot_model(self.__action_model, 'Model.png', show_shapes=True)
@@ -95,6 +118,10 @@ class RlModel():
 
         self.__target_context = tf.get_default_graph()
         self.__model_lock = threading.Lock()
+
+    def get_last_conv_layer(self, input_image):
+        last_conv_layer = self.__action_model.get_layer('convolution2')
+        grad_model = keras.models.Model()
 
     # A helper function to read in the model from a JSON packet.
     # This is used both to read the file from disk and from a network packet
@@ -198,19 +225,15 @@ class RlModel():
     def predict_state(self, observation):
         # Our model only predicts on a single state.
         # Take the latest image
-        if self.__use_handle and self.__use_lane:
-            observation = observation.reshape(1,59,255,5) #with handle and with lane
-        elif self.__use_handle or self.__use_lane:
-            observation = observation.reshape(1,59,255,4) #only with handle or lane
-        else:
-            observation = observation.reshape(1,59,255,3) #without handle and lane
+        observation = observation.reshape(1,59,255,self.__depth)            
 
         with self.__action_context.as_default():
             predicted_qs = self.__action_model.predict([observation])
         print('predicted_qs',predicted_qs)
-        print('sum of this', sum(sum(predicted_qs)))
+        # print('sum of this', sum(sum(predicted_qs[0])))
+        # print('speed sigmoid', predicted_qs[1])
         # Select the action with the highest Q value
-        predicted_state = np.argmax(predicted_qs)
+        predicted_state = np.argmax(predicted_qs[0])
         return (predicted_state, predicted_qs[0][predicted_state])
 
     # Convert the current state to control signals to drive the car.
