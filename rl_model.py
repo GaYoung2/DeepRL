@@ -229,22 +229,33 @@ class RlModel():
 
         with self.__action_context.as_default():
             predicted_qs = self.__action_model.predict([observation])
-        print('predicted_qs',predicted_qs)
-        # print('sum of this', sum(sum(predicted_qs[0])))
-        # print('speed sigmoid', predicted_qs[1])
+        # print('predicted_qs',predicted_qs)
+        print('sum of this', sum(sum(predicted_qs[0])))
+        print('speed sigmoid', predicted_qs[1])
         # Select the action with the highest Q value
         predicted_state = np.argmax(predicted_qs[0])
-        return (predicted_state, predicted_qs[0][predicted_state])
-
+        # return (predicted_state, predicted_qs[0][0][predicted_state])
+        return (predicted_state, predicted_qs[1][0], predicted_qs[0][0][predicted_state])
+    
+    def state_to_control_signals(self, state, car_throttle):
+        throttle=car_throttle[0].item()
+        car_break = car_throttle[1].item()
+        if throttle==car_break and throttle==0:
+            throttle=1
+        # return (self.__angle_values[state], throttle, car_break)
+        if throttle>=car_break:
+            return (self.__angle_values[state], throttle, 0)
+        else:
+            return (self.__angle_values[state], 0, car_break)
     # Convert the current state to control signals to drive the car.
     # As we are only predicting steering angle, we will use a simple controller to keep the car at a constant speed
-    def state_to_control_signals(self, state, car_state):
-        # (angle, speed up, break) marked by kang 21-03-12
+    # def state_to_control_signals(self, state, car_state):
+    #     # (angle, speed up, break) marked by kang 21-03-12
 
-        if car_state.speed > 7:
-            return (self.__angle_values[state], 0, 1)
-        else:
-            return (self.__angle_values[state], 1, 0)
+    #     if car_state.speed > 7:
+    #         return (self.__angle_values[state], 0, 1)
+    #     else:
+    #         return (self.__angle_values[state], 1, 0)
 
     # Gets a random state
     # Used during annealing

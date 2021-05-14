@@ -37,7 +37,7 @@ class DistributedAgent():
         self.__batch_size = 32
         self.__experiment_name = 'original+static'
         self.__train_conv_layers = False
-        self.__epsilon = 0.2
+        self.__epsilon = 1
         self.__percent_full = 0
         self.__num_batches_run = 0
         self.__last_checkpoint_batch_count = 0
@@ -156,15 +156,21 @@ class DistributedAgent():
         time.sleep(1.5)
         # move place up to get time to load lane detect model
         state_buffer, state_lane = self.__get_image(use_lane=self.__use_lane)
+        
         if self.__use_lane:
             state_lane.shape = (59,255,1)
-            state_buffer = np.concatenate([state_buffer, state_lane],axis=2)
+            state_buffer = np.concatenate([state_buffer, state_lane], axis=2)
 
         if self.__use_handle:
-            
             post_handle = self.__handles[0].reshape(59,255,1)
             cv2.imshow('handle',post_handle)
-            state_buffer = np.concatenate([state_buffer, post_handle],axis=2)
+
+            state_buffer = np.concatenate([state_buffer, post_handle], axis=2)
+        if self.__use_speed:
+            self.__speed = self.__car_client.getCarState().speed
+            state_speed = np.ones((59,255,1))
+            state_speed.fill(self.__speed)
+            state_buffer = np.concatenate([state_buffer, state_speed], axis=2)
 
         self.__car_controls.throttle = 1
         self.__car_controls.brake = 0
@@ -189,7 +195,7 @@ class DistributedAgent():
             collision_info = self.__car_client.getCollisionInfo()
             utc_now = datetime.datetime.utcnow()
             
-            if (collision_info.has_collided or car_state.speed < 1 or utc_now > end_time or far_off):
+            if (collision_info.has_collided or car_state.speed < 0.5 or utc_now > end_time or far_off):
                 print(collision_info.has_collided)
                 print('Start time: {0}, end time: {1}'.format(start_time, utc_now), file=sys.stderr)
                 print('Time elapsed: {0}'.format(utc_now-self.__the_start_time))
@@ -212,13 +218,16 @@ class DistributedAgent():
                 if (do_greedy < self.__epsilon or always_random):
                     num_random += 1
                     next_state = self.__model.get_random_state()
+                    next_throttle = tuple(np.random.rand(2)*1.5)
                     predicted_reward = 0
                     print('Do random {0}'.format(next_state))
                 else:
-                    next_state, predicted_reward= self.__model.predict_state(pre_state)
+                    next_state, next_throttle, predicted_reward = self.__model.predict_state(pre_state)
+                    # next_state, predicted_reward = self.__model.predict_state(pre_state)
                     print('Model predicts {0}'.format(next_state))
                 # Convert the selected state to a control signal
-                next_control_signals = self.__model.state_to_control_signals(next_state, self.__car_client.getCarState())
+                # next_control_signals = self.__model.state_to_control_signals(next_state, self.__car_client.getCarState())
+                next_control_signals = self.__model.state_to_control_signals(next_state, next_throttle)
                 # Take the action
                 self.__car_controls.steering = self.prev_steering + next_control_signals[0]
                 # print('prev {0} -> changed {1}'.format(self.prev_steering, self.__car_controls.steering))
@@ -228,9 +237,12 @@ class DistributedAgent():
                     self.__car_controls.steering = -1.0
                 self.prev_steering = self.__car_controls.steering
                 print('normalized steering : ', self.prev_steering)
-
+                print('next_control',next_control_signals)
+                
+                
                 self.__car_controls.throttle = next_control_signals[1]
                 self.__car_controls.brake = next_control_signals[2]
+                
                 self.__car_client.setCarControls(self.__car_controls)
                 
                 # Wait for a short period of time to see outcome
@@ -248,6 +260,14 @@ class DistributedAgent():
                     post_handle = self.__handles[angle].reshape(59,255,1)
                     cv2.imshow('handle',post_handle)
                     state_buffer = np.concatenate([state_buffer, post_handle],axis=2)
+
+                if self.__use_speed:
+                    self.__speed = self.__car_client.getCarState().speed
+                    state_speed = np.ones((59,255,1))
+                    state_speed.fill(self.__speed)
+                    print('current speed', self.__speed)
+                    state_buffer = np.concatenate([state_buffer, state_speed], axis=2)
+
                 post_state = state_buffer
 
                 car_state = self.__car_client.getCarState()
