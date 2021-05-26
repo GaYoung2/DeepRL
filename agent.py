@@ -28,7 +28,7 @@ class DistributedAgent():
         self.__max_epoch_runtime_sec = float(30)
         self.__replay_memory_size = 50
         self.__batch_size = 32
-        self.__experiment_name = 'original+static'
+        self.__experiment_name = 'model1+5+100'
         self.__train_conv_layers = False
         self.__epsilon = 1
         self.__percent_full = 0
@@ -180,9 +180,9 @@ class DistributedAgent():
                 # The Agent should occasionally pick random action instead of best action
                 do_greedy = np.random.random_sample()
                 pre_state = copy.deepcopy(state_buffer)
-                # angle = -int(self.prev_steering/0.05*4)
-                # pre_handle = self.__handles[angle].reshape(59,255,1)
-                # pre_state = np.concatenate([pre_state, pre_handle], axis=2)
+                angle = -int(self.prev_steering/0.05*4)
+                pre_handle = self.__handles[angle].reshape(59,255,1)
+                pre_state = np.concatenate([pre_state, pre_handle], axis=2)
                 if (do_greedy < self.__epsilon or always_random):
                     num_random += 1
                     next_state = self.__model.get_random_state()
@@ -205,10 +205,10 @@ class DistributedAgent():
                 # Observe outcome and compute reward from action
                 state_buffer = self.__get_image()
 
-                # angle = -int(self.prev_steering/0.05*4)
-                # post_handle = self.__handles[angle].reshape(59,255,1)
-                # post_state = np.concatenate([state_buffer, post_handle],axis=2)
-                post_state = state_buffer #deleted when append handle
+                angle = -int(self.prev_steering/0.05*4)
+                post_handle = self.__handles[angle].reshape(59,255,1)
+                post_state = np.concatenate([state_buffer, post_handle],axis=2)
+                # post_state = state_buffer #deleted when append handle
 
                 car_state = self.__car_client.getCarState()
                 collision_info = self.__car_client.getCollisionInfo()
@@ -399,7 +399,7 @@ class DistributedAgent():
         car_start_coords = [12961.722656, 6660.329102, 0]
         road = ''
         if not random_respawn:
-            road = 'road_lines.txt'
+            road = 'road_5points.txt'
         else:
             road = 'origin_road_lines.txt'
         with open(os.path.join(os.path.join(self.__data_dir, 'data'), road), 'r') as f:
@@ -426,52 +426,52 @@ class DistributedAgent():
                 first_point = np.array([float(point_values[0]), float(point_values[1]), 0])
                 second_point = np.array([float(point_values[2]), float(point_values[3]), 0])
                 self.__reward_points.append(tuple((first_point, second_point)))
-
     def __get_next_starting_point(self):
-    
-        # Get the current state of the vehicle
-        car_state = self.__car_client.getCarState()
-
-        # Pick a random road.
-        random_line_index = np.random.randint(0, high=len(self.__road_points))
         
-        # Pick a random position on the road. 
-        # Do not start too close to either end, as the car may crash during the initial run.
-        
-        # added return to origin by Kang 21-03-10
-        if not random_respawn:
-            random_interp = 0.15    # changed by GY 21-03-10
+            # Get the current state of the vehicle
+            car_state = self.__car_client.getCarState()
 
-            # Pick a random direction to face
-            random_direction_interp = 0.4 # changed by GY 21-03-10
-        else:
-            random_interp = (np.random.random_sample() * 0.4) + 0.3 
-            random_direction_interp = np.random.random_sample()
-
-        # Compute the starting point of the car
-        random_line = self.__road_points[random_line_index]
-        random_start_point = list(random_line[0])
-        random_start_point[0] += (random_line[1][0] - random_line[0][0])*random_interp
-        random_start_point[1] += (random_line[1][1] - random_line[0][1])*random_interp
-
-        # Compute the direction that the vehicle will face
-        # Vertical line
-        if (np.isclose(random_line[0][1], random_line[1][1])):
-            if (random_direction_interp > 0.5):
-                random_direction = (0,0,0)
+            # Pick a random road.
+            random_line_index = np.random.randint(0, high=len(self.__road_points))
+            # Pick a random position on the road. 
+            # Do not start too close to either end, as the car may crash during the initial run.
+            
+            # added return to origin by Kang 21-03-10
+            if not random_respawn:
+                if random_line_index==0:
+                    random_interp = 0.9
+                else:
+                    random_interp = 0.15    # changed by GY 21-03-10
+                # Pick a random direction to face
+                random_direction_interp = 0.4 # changed by GY 21-03-10
             else:
-                random_direction = (0, 0, math.pi)
-        # Horizontal line
-        elif (np.isclose(random_line[0][0], random_line[1][0])):
-            if (random_direction_interp > 0.5):
-                random_direction = (0,0,math.pi/2)
-            else:
-                random_direction = (0,0,-1.0 * math.pi/2)
+                random_interp = (np.random.random_sample() * 0.4) + 0.3 
+                random_direction_interp = np.random.random_sample()
 
-        # The z coordinate is always zero
-        random_start_point[2] = -0
-        return (random_start_point, random_direction)
+            # Compute the starting point of the car
+            random_line = self.__road_points[random_line_index]
+            random_start_point = list(random_line[0])
+            random_start_point[0] += (random_line[1][0] - random_line[0][0])*random_interp
+            random_start_point[1] += (random_line[1][1] - random_line[0][1])*random_interp
 
+            # Compute the direction that the vehicle will face
+            # Vertical line
+            if (np.isclose(random_line[0][1], random_line[1][1])):
+                if (random_direction_interp > 0.5):
+                    random_direction = (0,0,0)
+                else:
+                    random_direction = (0, 0, math.pi)
+            # Horizontal line
+            elif (np.isclose(random_line[0][0], random_line[1][0])):
+                if (random_direction_interp > 0.5):
+                    random_direction = (0,0,math.pi/2)
+                else:
+                    random_direction = (0,0,-1.0 * math.pi/2)
+
+            # The z coordinate is always zero
+            random_start_point[2] = -0
+            return (random_start_point, random_direction)
+   
     def __init_handle_images(self):
         self.__handles = {0 : cv2.cvtColor(cv2.imread(self.__handle_dir+'0.png'), cv2.COLOR_BGR2GRAY),
                         20 : cv2.cvtColor(cv2.imread(self.__handle_dir+'right20.png'), cv2.COLOR_BGR2GRAY),

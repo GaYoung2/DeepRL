@@ -10,7 +10,8 @@ import datetime
 import cv2
 
 MODEL_FILENAME = 'data/bestpoint/handle+static/336724.json'
-random_respawn = True
+random_respawn = False
+
 model = RlModel(None, False)
 with open(MODEL_FILENAME, 'r') as f:
     checkpoint_data = json.loads(f.read())
