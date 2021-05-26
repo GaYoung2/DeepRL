@@ -26,9 +26,10 @@ K.set_session(session)
 np.set_printoptions(threshold=sys.maxsize)  
 # A wrapper class for the DQN model
 class RlModel():
-    def __init__(self, weights_path, train_conv_layers, use_handle = True, use_lane = True, use_speed = True):
+    def __init__(self, weights_path, train_conv_layers, run = True, use_handle = True, use_lane = True, use_speed = True):
         #self.__angle_values = [-1, -0.5, 0, 0.5, 1]
         self.__angle_values = [-0.5, -0.25, 0, 0.25, 0.5] #continuous state
+        self.__throttle_values = [[1,0],[0,1]]
         print('handle, lane, speed', use_handle,use_lane,use_speed)
 
         self.__nb_actions = 5
@@ -63,17 +64,17 @@ class RlModel():
         img_stack = Conv2D(32, (3, 3), activation=activation, padding='same', name='convolution2', trainable=train_conv_layers)(img_stack)
         img_stack = MaxPooling2D(pool_size=(2, 2))(img_stack)
         img_stack = Flatten()(img_stack)
-        img_stack = Dropout(0.2)(img_stack)
+        if not run:
+            img_stack = Dropout(0.2)(img_stack)
 
         img_stack = Dense(128, name='rl_dense1', kernel_initializer=random_normal(stddev=0.01))(img_stack)
 
         #with handle
-        img_stack=Dropout(0.2)(img_stack)
-        BatchNormalization()
+        img_stack = BatchNormalization()(img_stack)
         img_stack = Dense(128, name='rl_dense2', kernel_initializer=random_normal(stddev=0.01))(img_stack)
-        BatchNormalization()
+        img_stack = BatchNormalization()(img_stack)
         img_stack = Dense(128, name='rl_dense3', kernel_initializer=random_normal(stddev=0.01))(img_stack)
-        BatchNormalization()
+        img_stack = BatchNormalization()(img_stack)
         
         if self.__use_speed:
             output_throttle = Dense(self.__nb_speed_actions, name='rl_throttle_output', kernel_initializer=random_normal(stddev=0.01), activation='sigmoid')(img_stack)
@@ -184,36 +185,61 @@ class RlModel():
         post_states = np.array(batches['post_states'])
         rewards = np.array(batches['rewards'])
         actions = list(batches['actions'])
+        if self.__use_speed:
+            throttles = list(batches['throttles'])
         is_not_terminal = np.array(batches['is_not_terminal'])
         
         with self.__action_context.as_default():
-            labels = self.__action_model.predict([pre_states], batch_size=32)
+            if self.__use_speed:
+                labels_1,labels_2 = self.__action_model.predict([pre_states], batch_size=32)
+            else:
+                labels = self.__action_model.predict([pre_states], batch_size=32)
         
         # Find out what the target model will predict for each post-decision state.
         with self.__target_context.as_default():
-            q_futures = self.__target_model.predict([post_states], batch_size=32)
-
+            if self.__use_speed:
+                q_futures_1, q_futures_2 = self.__action_model.predict([pre_states], batch_size=32)
+            else:
+                q_futures = self.__target_model.predict([post_states], batch_size=32)
+        
         # Apply the Bellman equation
-        q_futures_max = np.max(q_futures, axis=1)
-        q_labels = (q_futures_max * is_not_terminal * self.__gamma) + rewards
+        if self.__use_speed:
+            q_futures_1_max = np.max(q_futures_1, axis=1)
+            q_futures_2_max = np.max(q_futures_2, axis=1)
+            q_labels_1 = (q_futures_1_max * is_not_terminal * self.__gamma) + rewards
+            q_labels_2 = (q_futures_2_max * is_not_terminal * self.__gamma) + rewards
+
+        else:
+            q_futures_max = np.max(q_futures, axis=1)
+            q_labels = (q_futures_max * is_not_terminal * self.__gamma) + rewards
         
         # Update the label only for the actions that were actually taken.
-        for i in range(0, len(actions), 1):
-            labels[i][actions[i]] = q_labels[i]
+        if self.__use_speed:
+
+            for i in range(0, len(actions), 1):
+                labels_1[i][actions[i]] = q_labels_1[i]
+                labels_2[i][throttles[i]] = q_labels_2[i]
+        else:
+
+            for i in range(0, len(actions), 1):
+                labels[i][actions[i]] = q_labels[i]
 
         # Perform a training iteration.
         with self.__action_context.as_default():
             original_weights = [np.array(w, copy=True) for w in self.__action_model.get_weights()]
-            self.__action_model.fit([pre_states], labels, epochs=1, batch_size=32, verbose=1)
+            if self.__use_speed:
+                self.__action_model.fit([pre_states], [labels_1, labels_2], epochs=1, batch_size=32, verbose=1)
+            else:
+                self.__action_model.fit([pre_states], labels, epochs=1, batch_size=32, verbose=1)
             
             # Compute the gradients
-            # new_weights = self.__action_model.get_weights()
-            # gradients = []
-            # dx = 0
-            # for i in range(0, len(original_weights), 1):
-            #     gradients.append(new_weights[i] - original_weights[i])
-            #     dx += np.sum(np.sum(np.abs(new_weights[i]-original_weights[i])))
-            # print('change in weights from training iteration: {0}'.format(dx))
+            new_weights = self.__action_model.get_weights()
+            gradients = []
+            dx = 0
+            for i in range(0, len(original_weights), 1):
+                gradients.append(new_weights[i] - original_weights[i])
+                dx += np.sum(np.sum(np.abs(new_weights[i]-original_weights[i])))
+            print('change in weights from training iteration: {0}'.format(dx))
         
         print('END GET GRADIENT UPDATE DEBUG')
 
@@ -231,12 +257,13 @@ class RlModel():
             predicted_qs = self.__action_model.predict([observation])
         # print('predicted_qs',predicted_qs)
         if use_speed:
-            print('sum of this', sum(sum(predicted_qs[0])))
-            print('speed sigmoid', predicted_qs[1])
+            # print('sum of this', sum(sum(predicted_qs[0])))
+            # print('speed sigmoid', predicted_qs[1])
             # Select the action with the highest Q value
             predicted_state = np.argmax(predicted_qs[0])
+            predicted_throttle = np.argmax(predicted_qs[1])
             # return (predicted_state, predicted_qs[0][0][predicted_state])
-            return (predicted_state, predicted_qs[1][0], predicted_qs[0][0][predicted_state])
+            return (predicted_state, predicted_throttle, predicted_qs[0][0][predicted_state])
         else:
             print('sum of this', sum(sum(predicted_qs)))
             # Select the action with the highest Q value
@@ -248,6 +275,7 @@ class RlModel():
     def state_to_control_signals(self, state, car_state=None, car_throttle=None, use_speed=False):
         # (angle, speed up, break) marked by kang 21-03-12
         if use_speed:
+            return (self.__angle_values[state], self.__throttle_values[car_throttle][0],self.__throttle_values[car_throttle][1])
             throttle=car_throttle[0].item()
             car_break = car_throttle[1].item()
             if throttle==car_break and throttle==0:
@@ -267,5 +295,5 @@ class RlModel():
     # Gets a random state
     # Used during annealing
     def get_random_state(self):
-        return np.random.choice(5, 1)[0]
+        return np.random.choice(5, 1)[0], np.random.choice(2,1)[0]
         #return np.random.randint(low=0, high=(self.__nb_actions) - 1)

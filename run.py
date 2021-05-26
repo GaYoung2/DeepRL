@@ -9,12 +9,28 @@ import PIL.ImageFilter
 import datetime
 import cv2
 
-MODEL_FILENAME = 'data/bestpoint/original/39130.json'
-random_respawn = True
-model = RlModel(None, False)
+MODEL_FILENAME = 'data/bestpoint/deep+handle+speed+far_reward_penalty_1;9/132341.json'
+random_respawn = False
+
+print('If you want to use handle, Enter "y", otherwise "n"')
+handle_choose = True
+# if input() == 'y': pass
+# else: handle_choose = False
+print('If you want to use lane detection, Enter "y", otherwise "n"')
+lane_choose = False
+# if input() == 'n': pass
+# else: lane_choose = True
+print('If you want to do speed handling, Enter "y", otherwise "n"')
+speed_choose = True
+# if input() == 'y': pass
+# else: speed_choose = False
+
+model = RlModel(None, False, handle_choose, lane_choose, speed_choose)
 with open(MODEL_FILENAME, 'r') as f:
     checkpoint_data = json.loads(f.read())
     model.from_packet(checkpoint_data['model'])
+
+
 
 print('Connecting to AirSim...')
 car_client = CarClient()
@@ -46,7 +62,7 @@ def get_next_starting_point(car_client):
     
     # added return to origin by Kang 21-03-10
     if not random_respawn:
-        random_interp = 0.15    # changed by GY 21-03-10
+        random_interp = 0.1    # changed by GY 21-03-10
 
         # Pick a random direction to face
         random_direction_interp = 0.4 # changed by GY 21-03-10
@@ -110,7 +126,7 @@ car_client.simSetPose(Pose(Vector3r(starting_points[0], starting_points[1], star
 state_buffer = []
 print('Running car for a few seconds...')
 car_controls.steering = 0
-car_controls.throttle = 0
+car_controls.throttle = 1
 car_controls.brake = 0
 car_client.setCarControls(car_controls)
 prev_steering = 0
@@ -128,11 +144,26 @@ print('Running model')
 while(True):
     state_buffer = get_image(car_client)
     #with handle
-    # angle = -int(prev_steering/0.05*4)
-    # pre_handle = handles[angle].reshape(59,255,1)
-    # state_buffer = np.concatenate([state_buffer, pre_handle], axis=2)
-    next_state, dummy = model.predict_state(state_buffer)
-    next_control_signal = model.state_to_control_signals(next_state, car_client.getCarState())
+    if handle_choose:
+        angle = -int(prev_steering/0.05*4)
+        pre_handle = handles[angle].reshape(59,255,1)
+        state_buffer = np.concatenate([state_buffer, pre_handle], axis=2)
+
+    if speed_choose:
+        speed = max(0, car_client.getCarState().speed)
+        state_speed = np.ones((59,255,1))
+        state_speed.fill(speed)
+        # uint_img = np.array(state_speed*3315).astype('uint8')
+        # grayImage = cv2.cvtColor(uint_img, cv2.COLOR_GRAY2BGR)
+        # cv2.imshow('test',grayImage)
+        state_buffer = np.concatenate([state_buffer, state_speed], axis=2)
+    
+        
+    next_state, next_throttle, dummy = model.predict_state(state_buffer, use_speed = speed_choose)
+    if speed_choose:
+        next_control_signal = model.state_to_control_signals(next_state, car_throttle=next_throttle, use_speed=speed_choose)
+    else:
+        next_control_signal = model.state_to_control_signals(next_state, car_client.getCarState())
 
     car_controls.steering = next_control_signal[0]
     # prev_steering = car_controls.steering

@@ -21,7 +21,7 @@ from lane_detection import Lanes, road_lines
 MODEL_FILENAME = None
 
 # load lane_net model
-trained_model  = load_model('full_CNN_model.h5')
+trained_model  = None
 random_respawn = False
 EXPERIENCE_FILENAME = 'latest.pkl'
 class DistributedAgent():
@@ -39,7 +39,7 @@ class DistributedAgent():
         self.__max_epoch_runtime_sec = float(50)
         self.__replay_memory_size = 50
         self.__batch_size = 32
-        self.__experiment_name = 'deep+handle+speed'
+        self.__experiment_name = 'deep+handle+speed+far_reward_penalty_1;9'
         self.__train_conv_layers = False
         self.__epsilon = 1
         self.__percent_full = 0
@@ -60,12 +60,13 @@ class DistributedAgent():
         self.__init_road_points()
         self.__init_reward_points()
         self.__init_handle_images()
-        self.__best_drive = datetime.timedelta(seconds=-1)  #added 2021-03-09 by kang
+        self.__best_drive = 0
+        # self.__best_drive = datetime.timedelta(seconds=-1)  #added 2021-03-09 by kang
         ### removed by Kang 21-05-13 ###
         # self.__best_model = None  #added 2021-03-09 by kang
         # self.__best_epsilon = 1
-        # self.__num_of_trial = 0
         ################################
+        self.__num_of_trial = 0
         self.__the_start_time = datetime.datetime.utcnow()
         self.__total_reward = 0
         self.__drive_time = 0
@@ -75,12 +76,13 @@ class DistributedAgent():
         self.__use_speed = use_speed
         ###########################################
         self.__drive_distance = 0   # reward에 지나간 거리 추가
+        self.__prev_car_point = None
         
     def start(self):  
         self.__run_function()
 
     def __run_function(self):
-        self.__model = RlModel(self.__weights_path, self.__train_conv_layers, use_handle=self.__use_handle, use_lane=self.__use_lane, use_speed=self.__use_speed)
+        self.__model = RlModel(self.__weights_path, self.__train_conv_layers, run = False, use_handle=self.__use_handle, use_lane=self.__use_lane, use_speed=self.__use_speed)
         
         # Read json model file from here by Kang 21-03-10
         if MODEL_FILENAME != None:
@@ -114,7 +116,8 @@ class DistributedAgent():
 
                 else:
                     if (self.__model is not None):
-                        experiences, frame_count, self.__drive_time = self.__run_airsim_epoch(False)
+                        # experiences, frame_count, self.__drive_time = self.__run_airsim_epoch(False)
+                        experiences, frame_count = self.__run_airsim_epoch(False)
                         # If we didn't immediately crash, train on the gathered experiences
                         if (frame_count > 0):
                             print('Generating {0} minibatches...'.format(frame_count))
@@ -128,6 +131,7 @@ class DistributedAgent():
                             if (len(sampled_experiences) > 0):
                                 print('Publishing AirSim Epoch.')
                                 self.__publish_batch_and_update_model(sampled_experiences, frame_count, self.__drive_time)
+                            self.__drive_distance = 0
                 
             except msgpackrpc.error.TimeoutError:
                 print('Lost connection to AirSim while fillling replay memory. Attempting to reconnect.')
@@ -174,26 +178,36 @@ class DistributedAgent():
 
             state_buffer = np.concatenate([state_buffer, post_handle], axis=2)
         
-        self.__car_controls.throttle = 0.5
+        if self.__use_speed:
+            self.__car_controls.throttle = 0
+        else:
+            self.__car_controls.throttle = 0.5
         self.__car_controls.brake = 0
         self.prev_steering = 0
         self.__car_client.setCarControls(self.__car_controls)
         time.sleep(1.5)
         done = False
         actions = []
+        throttle = []
         pre_states = []
         post_states = []
         rewards = []
         predicted_rewards = []
         car_state = self.__car_client.getCarState()
+        #Get the car position
+        position_key = bytes('position', encoding='utf8')
+        x_val_key = bytes('x_val', encoding='utf8')
+        y_val_key = bytes('y_val', encoding='utf8')
+        self.__prev_car_point =  np.array([car_state.kinematics_true[position_key][x_val_key], car_state.kinematics_true[position_key][y_val_key], 0])
+
         if self.__use_speed:
-            self.__speed = car_state.speed
+            self.__speed = max(0, car_state.speed)
             state_speed = np.ones((59,255,1))
             state_speed.fill(self.__speed)
             print('speed:',self.__speed)
-            uint_img = np.array(state_speed*3315).astype('uint8')
-            grayImage = cv2.cvtColor(uint_img, cv2.COLOR_GRAY2BGR)
-            cv2.imshow('test',grayImage)
+            # uint_img = np.array(state_speed*3315).astype('uint8')
+            # grayImage = cv2.cvtColor(uint_img, cv2.COLOR_GRAY2BGR)
+            # cv2.imshow('test',grayImage)
             state_buffer = np.concatenate([state_buffer, state_speed], axis=2)
 
         self.__total_reward = 0
@@ -206,9 +220,11 @@ class DistributedAgent():
         while not done:
             collision_info = self.__car_client.getCollisionInfo()
             utc_now = datetime.datetime.utcnow()
-            
-            if (collision_info.has_collided or car_state.speed < 0.5 or utc_now > end_time or far_off):
-                print('end by collision?',collision_info.has_collided)
+            # added speed, so change little bit.
+            # if (collision_info.has_collided or car_state.speed < 0.2 or utc_now > end_time or far_off):
+            if (collision_info.has_collided or utc_now > end_time or far_off):
+                print('end by collision: ',collision_info.has_collided)
+                print('end by far off: ',far_off)
                 print('Start time: {0}, end time: {1}'.format(start_time, utc_now), file=sys.stderr)
                 print('Time elapsed: {0}'.format(utc_now-self.__the_start_time))
                 print('Current best drive: {0}'.format(self.__best_drive))
@@ -216,12 +232,13 @@ class DistributedAgent():
                 self.__car_controls.throttle = 0
                 self.__car_controls.brake = 1
                 self.__car_client.setCarControls(self.__car_controls)
-                self.__drive_distance = 0
+                
                 time.sleep(4)
                 if (utc_now > end_time):
                     print('timed out.')
                     print('Full autonomous run finished at {0}'.format(utc_now), file=sys.stderr)
                 done = True
+                self.__drive_distance = 0
                 
                 sys.stderr.flush()
             else:
@@ -231,16 +248,17 @@ class DistributedAgent():
                 
                 if (do_greedy < self.__epsilon or always_random):
                     num_random += 1
-                    next_state = self.__model.get_random_state()
-                    next_throttle = tuple(np.random.rand(2)*1.5)
+                    next_state, next_throttle = self.__model.get_random_state()
+                    # next_throttle = tuple(np.random.rand(2)+1)
                     predicted_reward = 0
-                    print('Do random {0}'.format(next_state))
+                    print('Do random {0}'.format(next_state), end='  ')
                 else:
                     if self.__use_speed:
                         next_state, next_throttle, predicted_reward = self.__model.predict_state(pre_state,self.__use_speed)
                     else:
                         next_state, predicted_reward = self.__model.predict_state(pre_state, self.__use_speed)
-                    print('Model predicts {0}'.format(next_state))
+                    print('Model say {0}'.format(next_state), end='  ')
+                    # print('Model predicts {0}'.format(next_state), end='  ')
 
                 # Convert the selected state to a control signal
                 if self.__use_speed:
@@ -256,13 +274,14 @@ class DistributedAgent():
                 elif self.__car_controls.steering < -1.0:
                     self.__car_controls.steering = -1.0
                 self.prev_steering = self.__car_controls.steering
-                print('normalized steering : ', self.prev_steering)
-                print('next_control',next_control_signals)
+                # print('normalized steering : ', self.prev_steering)
+                to_print=np.round(next_control_signals[1:],2)
+                print('next_control',"[{:.3f} {:.3f}]".format(to_print[0],to_print[1]), end='  ')
                 
                 
                 self.__car_controls.throttle = next_control_signals[1]
                 self.__car_controls.brake = next_control_signals[2]
-                
+
                 self.__car_client.setCarControls(self.__car_controls)
                 
                 # Wait for a short period of time to see outcome
@@ -282,13 +301,13 @@ class DistributedAgent():
                     state_buffer = np.concatenate([state_buffer, post_handle],axis=2)
 
                 if self.__use_speed:
-                    self.__speed = self.__car_client.getCarState().speed
+                    self.__speed = max(0, self.__car_client.getCarState().speed)
                     state_speed = np.ones((59,255,1))
                     state_speed.fill(self.__speed)
-                    print('speed:',self.__speed)
-                    uint_img = np.array(state_speed*3315).astype('uint8')
-                    grayImage = cv2.cvtColor(uint_img, cv2.COLOR_GRAY2BGR)
-                    cv2.imshow('test',grayImage)
+                    # print('speed:',self.__speed)
+                    # uint_img = np.array(state_speed*3315).astype('uint8')
+                    # grayImage = cv2.cvtColor(uint_img, cv2.COLOR_GRAY2BGR)
+                    # cv2.imshow('test',grayImage)
                     state_buffer = np.concatenate([state_buffer, state_speed], axis=2)
 
                 post_state = state_buffer
@@ -303,9 +322,13 @@ class DistributedAgent():
                 rewards.append(reward)
                 predicted_rewards.append(predicted_reward)
                 actions.append(next_state)
+                if self.__use_speed:
+                    throttle.append(next_throttle)
                 self.__total_reward = sum(rewards)
+
         # action수가 너무 적을경우, 그 회차의 학습을 진행하지 않음. #added 2021-03-09 by kang
         if len(actions) < 10:
+            return self.__experiences, 0
             return self.__experiences, 0, 0
 
         is_not_terminal = [1 for i in range(0, len(actions)-1, 1)]
@@ -313,18 +336,21 @@ class DistributedAgent():
         self.__add_to_replay_memory('pre_states', pre_states)
         self.__add_to_replay_memory('post_states', post_states)
         self.__add_to_replay_memory('actions', actions)
+        self.__add_to_replay_memory('throttles', throttle)
         self.__add_to_replay_memory('rewards', rewards)
         self.__add_to_replay_memory('predicted_rewards', predicted_rewards)
         self.__add_to_replay_memory('is_not_terminal', is_not_terminal)
 
         print('Percent random actions: {0}'.format(num_random / max(1, len(actions))))
+        print('Epsilon: ',self.__epsilon)
         print('Num total actions: {0}'.format(len(actions)))
         
         if not always_random:
             self.__epsilon -= self.__per_iter_epsilon_reduction
             self.__epsilon = max(self.__epsilon, self.__min_epsilon)
-        
-        return self.__experiences, len(actions), utc_now - start_time
+
+        return self.__experiences, len(actions)
+        # return self.__experiences, len(actions), utc_now - start_time
 
     def __add_to_replay_memory(self, field_name, data):
         if field_name not in self.__experiences:
@@ -339,6 +365,8 @@ class DistributedAgent():
         sampled_experiences['pre_states'] = []
         sampled_experiences['post_states'] = []
         sampled_experiences['actions'] = []
+        if self.__use_speed:
+            sampled_experiences['throttles'] = []
         sampled_experiences['rewards'] = []
         sampled_experiences['predicted_rewards'] = []
         sampled_experiences['is_not_terminal'] = []
@@ -354,10 +382,11 @@ class DistributedAgent():
                 idx_set = set(np.random.choice(list(range(0, suprise_factor.shape[0], 1)), size=(self.__batch_size), replace=False))
             else:
                 idx_set = set(np.random.choice(list(range(0, suprise_factor.shape[0], 1)), size=(self.__batch_size), replace=False, p=suprise_factor))
-        
             sampled_experiences['pre_states'] += [experiences['pre_states'][i] for i in idx_set]
             sampled_experiences['post_states'] += [experiences['post_states'][i] for i in idx_set]
             sampled_experiences['actions'] += [experiences['actions'][i] for i in idx_set]
+            if self.__use_speed:
+                sampled_experiences['throttles'] += [experiences['throttles'][i] for i in idx_set]
             sampled_experiences['rewards'] += [experiences['rewards'][i] for i in idx_set]
             sampled_experiences['predicted_rewards'] += [experiences['predicted_rewards'][i] for i in idx_set]
             sampled_experiences['is_not_terminal'] += [experiences['is_not_terminal'][i] for i in idx_set]
@@ -367,7 +396,7 @@ class DistributedAgent():
     def __publish_batch_and_update_model(self, batches, batches_count, drive_time): # updateed 2021-03-09 by kang
         # Train and get the gradients
         print('Publishing epoch data and getting latest model from parameter server...')
-        # gradients = self.__model.get_gradient_update_from_batches(batches) 
+        gradients = self.__model.get_gradient_update_from_batches(batches) 
     
         if (self.__num_batches_run > self.__batch_update_frequency + self.__last_checkpoint_batch_count):
             self.__model.update_critic()
@@ -402,11 +431,12 @@ class DistributedAgent():
             
             # 운행시간을 이용해서 가장 오래 걸린 시간을 best policy로 보고, best policy를 따로 저장. #added 2021-03-09 by kang
             # 만약 이번 회차의 운행시간이 가장 긴 운행시간일 경우에 best policy 저장
-            if drive_time > self.__best_drive and self.__epsilon<0.2:
+            # if self.__drive_distance*500 > self.__best_drive and self.__epsilon < 0.5:
+            if self.__total_reward and self.__epsilon < 0.5:
                 print("="*30)
                 print("New Best Policy!!!!!!")
                 print("="*30)
-                self.__best_drive = drive_time
+                self.__best_drive = self.__drive_distance*500
                 bestpoint_dir = os.path.join(os.path.join(self.__data_dir, 'bestpoint'), self.__experiment_name)
                 record_dir = os.path.join(os.path.join(self.__data_dir,'record'),self.__experiment_name)
                 
@@ -436,10 +466,10 @@ class DistributedAgent():
                     print('Add info to {0}'.format(record_file_name))
                     f.write(f'Total reward : {self.__total_reward}\n')
                     f.write(f'Start Time : {self.__the_start_time}\n')
-                    f.write(f'Epoch Time : {datetime.datetime.utcnow()}')
-                    f.write(f'Drive Time : {self.__drive_time}\n')
+                    f.write(f'Epoch Time : {datetime.datetime.utcnow()}\n')
+                    f.write(f'Drive Distance : {self.__drive_distance}\n')
 
-                
+                self.__num_of_trial = 0
 
                 # 처음부터 시작할때 최근의 상태를 알기 위하여 pickle로 experiences, epsilon 저장.   
                 
@@ -450,16 +480,22 @@ class DistributedAgent():
                 self.__best_model = self.__model
                 self.__best_experiences = self.__experiences
                 self.__best_epsilon = self.__epsilon
-
-            # elif self.__num_of_trial > 100:
-            #     print("="*30)
-            #     print("Reload best Model")
-            #     print("="*30)
-            #     self.__model = self.__best_model
-            #     self.__experiences = self.__best_experiences
-            #     self.__epsilon = self.__best_epsilon
-            #     self.__num_of_trial = 0
-            # self.__num_of_trial += 1
+            # 고민을 좀 해보자
+            # elif self.__epsilon == 0.1:
+            #     self.__num_of_trial += 1
+            #     # print("="*30)
+            #     # print("Reload best Model")
+            #     # print("="*30)
+            #     # self.__model = self.__best_model
+            #     # self.__experiences = self.__best_experiences
+            #     # self.__epsilon = self.__best_epsilon
+            #     if self.__num_of_trial > 1000:
+            #         print('='*16)
+            #         print('increase epsilon')
+            #         print('='*16)
+            #         self.__epsilon = 0.5 # make epsilon reach to 0.5 by Kang 21-05-17
+            #         self.__num_of_trial = 0
+            
 
     def __compute_reward(self, collision_info, car_state):
         # Define some constant parameters for the reward function
@@ -473,7 +509,10 @@ class DistributedAgent():
         
         # If the car is stopped, the reward is always zero
         speed = car_state.speed
-        if (speed < 0.5 or collision_info==True):
+
+        # to check about the speed, like upper change
+        # if (speed < 0.2 or collision_info==True):
+        if (collision_info==True):
             return 0.0, True
         
         #Get the car position
@@ -482,7 +521,8 @@ class DistributedAgent():
         y_val_key = bytes('y_val', encoding='utf8')
 
         car_point = np.array([car_state.kinematics_true[position_key][x_val_key], car_state.kinematics_true[position_key][y_val_key], 0])
-        
+        notmoved = np.round(self.__prev_car_point,2)==np.round(car_point,2)
+        self.__prev_car_point = car_point
         # Distance component is exponential distance to nearest line
         distance = 999
         
@@ -498,14 +538,37 @@ class DistributedAgent():
             distance = min(local_distance, distance)
         
         # reward로 넣어줄때 m단위로 넣으면 너무 과적합될것 같아서 km단위로 넣기로 결정.
+        # km단위로 설정시 너무 작아져, 500m단위로 결정.
         # 위에 방법을 취소하고, Decay_rate만큼을 곱한 distance를 뺀다!
-        self.__drive_distance += 0.05 * speed /1000
-        
-        distance_reward = math.exp(-(distance * DISTANCE_DECAY_RATE))
-
+        # 거리 = 시간 x 속도 (기본단위: m), 500을 나누면서 단위를 500m로 만듦.
+        # 500m 단위로 설정시 너무 reward가 작아셔 음의 reward가 나오는 경우가 존재.
+        # 따라서 100m단위로 수정했음
+        # 몇일동안 해본 결과, 너무 느는 정도가 낮아서, 100m단위가 아닌 m단위를 쓰기로 결정-05_25 by Kang
+        # 다시 500m단위로 수정
+        self.__drive_distance += (0.05 * max(0, speed) )/500
+        # 중앙까지 거리를 reward, 즉 양의 값으로 중앙가 가까울 경우 1, 멀경우 0에 가깝게 설정시
+        # 차량의 속도를 더했을 경우 중앙에 도달하면 멈춰버리는 현상 발생.
+        # 따라서 중앙에서의 거리를 penalty로 주어보기로 결정. 21-05-16 by Kang
+        distance_reward = math.exp((distance * DISTANCE_DECAY_RATE))
+        # 최대 distance_reward는 약 20정도를 갖기 때문에, min-max normalization.
+        # 최소값은 e의 0제곱인 1, 최대값은 테스트 결과 약 20.6정도로 나왔기 때문에, min=1,max=21로
+        # min-max 정규화
+        distance_reward = (distance_reward-1)/(21-1)  # --> 멀면 1, 중앙이면 0에 가까움.
         if self.__use_speed:
-            reward = -(distance * DISTANCE_DECAY_RATE) + self.__drive_distance
-            return reward, distance > THRESH_DIST
+            # reward를 0 이하로 내려갈 경우 0으로 했는데, 성과가 좋지 않아서 원래대로 음수도 나오도록 다시 설정한다.
+            reward = -distance_reward*0.1 + self.__drive_distance*0.9
+            # print(f'distance, drive {distance}m, {self.__drive_distance*100}m')
+            # print(f'distance reward {distance_reward}')
+            # print(f'drive_distance {self.__drive_distance}')
+            # print('reward', reward)
+            print('total reward {:.3f}'.format(np.round(self.__total_reward,3)),end='  ')
+            print('drive distance {:.3f}(500m)'.format(np.round(self.__drive_distance,3)), end='  ')
+            if notmoved[0] or notmoved[1]:
+                print('stopped')
+                return 0, distance > THRESH_DIST
+            else:
+                print()
+                return reward, distance > THRESH_DIST
         else:
             return distance_reward, distance > THRESH_DIST
 
@@ -570,14 +633,15 @@ class DistributedAgent():
 
         # Pick a random road.
         random_line_index = np.random.randint(0, high=len(self.__road_points))
-        
         # Pick a random position on the road. 
         # Do not start too close to either end, as the car may crash during the initial run.
         
         # added return to origin by Kang 21-03-10
         if not random_respawn:
-            random_interp = 0.5    # changed by GY 21-03-10
-
+            if random_line_index==0:
+                random_interp = 0.9
+            else:
+                random_interp = 0.15    # changed by GY 21-03-10
             # Pick a random direction to face
             random_direction_interp = 0.4 # changed by GY 21-03-10
         else:
@@ -629,6 +693,8 @@ print('If you want to use lane detection, Enter "y", otherwise "n"')
 lane_choose = True
 if input() == 'y': pass
 else: lane_choose = False
+if lane_choose:
+    trained_model  = load_model('full_CNN_model.h5')
 print('If you want to do speed handling, Enter "y", otherwise "n"')
 speed_choose = True
 if input() == 'y': pass
