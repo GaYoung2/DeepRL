@@ -55,11 +55,12 @@ class DistributedAgent():
         self.__num_of_trial = 0
         self.__the_start_time = datetime.datetime.utcnow()
         self.__total_reward = 0
-        self.__best_total_reward = 0
+        self.__best_reward = 0
         self.__drive_time = 0
         
     def start(self):  
         self.__run_function()
+        
 
     def __run_function(self):
         self.__model = RlModel(self.__weights_path, self.__train_conv_layers)
@@ -164,6 +165,7 @@ class DistributedAgent():
             utc_now = datetime.datetime.utcnow()
             
             if (collision_info.has_collided or car_state.speed < 1 or utc_now > end_time or far_off):
+                print('Start time: {0}, end time: {1}'.format(start_time, utc_now), file=sys.stderr)
                 print('Start time: {0}, end time: {1}'.format(start_time, utc_now), file=sys.stderr)
                 print('Time elapsed: {0}'.format(utc_now-self.__the_start_time))
                 self.__car_controls.steering = 0
@@ -311,13 +313,12 @@ class DistributedAgent():
 
             self.__last_checkpoint_batch_count = self.__num_batches_run
             
-            # 운행시간을 이용해서 가장 오래 걸린 시간을 best policy로 보고, best policy를 따로 저장. #added 2021-03-09 by kang
-            # 만약 이번 회차의 운행시간이 가장 긴 운행시간일 경우에 best policy 저장
-            if self.__total_reward > self.__best_total_reward and self.__epsilon<0.2:
+            # total reward값이, best total reward보다 클 때, best policy로 선정
+            if self.__total_reward > self.__best_reward and self.__epsilon<0.2:
                 print("="*30)
                 print("New Best Policy!!!!!!")
                 print("="*30)
-                self.__best_total_reward = self.__total_reward
+                #self.__best_drive = drive_time
                 bestpoint_dir = os.path.join(os.path.join(self.__data_dir, 'bestpoint'), self.__experiment_name)
                 record_dir = os.path.join(os.path.join(self.__data_dir,'record'),self.__experiment_name)
                 if not os.path.isdir(bestpoint_dir):
@@ -350,11 +351,17 @@ class DistributedAgent():
                 self.__best_model = self.__model
                 self.__best_experiences = self.__experiences
                 self.__best_epsilon = self.__epsilon
+                self.__best_reward = self.__total_reward #best reward를 갱신
 
     def __compute_reward(self, collision_info, car_state):
         #Define some constant parameters for the reward function
         THRESH_DIST = 4.0                # The maximum distance from the center of the road to compute the reward function
         DISTANCE_DECAY_RATE = 1.2        # The rate at which the reward decays for the distance function
+        CENTER_SPEED_MULTIPLIER = 2.0    # The ratio at which we prefer the distance reward to the speed reward
+
+        # If the car has collided, the reward is always zero
+        if (collision_info.has_collided):
+            return 0.0, True
         
         # If the car is stopped, the reward is always zero
         speed = car_state.speed
