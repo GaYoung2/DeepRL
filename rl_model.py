@@ -1,5 +1,6 @@
 
 import time
+from keras.regularizers import l2
 import numpy as np
 import json
 import threading
@@ -40,20 +41,24 @@ class RlModel():
         #pic_input = Input(shape=(59,255,3)) #without handle
         pic_input = Input(shape=(59,255,4)) #with handle
         
-        img_stack = Conv2D(16, (3, 3), name='convolution0', padding='same', activation=activation, trainable=train_conv_layers)(pic_input)
+        img_stack = Conv2D(32, (3, 3), name='convolution0', padding='same', data_format="channels_last", activation=activation,  kernel_regularizer=l2(1e-4))(pic_input)
         img_stack = MaxPooling2D(pool_size=(2,2))(img_stack)
-        img_stack = Conv2D(32, (3, 3), activation=activation, padding='same', name='convolution1', trainable=train_conv_layers)(img_stack)
+        img_stack = Conv2D(64, (3, 3), activation=activation, padding='same', data_format="channels_last", name='convolution1',  kernel_regularizer=l2(1e-4))(img_stack)
         img_stack = MaxPooling2D(pool_size=(2, 2))(img_stack)
-        img_stack = Conv2D(32, (3, 3), activation=activation, padding='same', name='convolution2', trainable=train_conv_layers)(img_stack)
+        img_stack = Conv2D(128, (3, 3), activation=activation, padding='same', data_format="channels_last", name='convolution2',  kernel_regularizer=l2(1e-4))(img_stack)
         img_stack = MaxPooling2D(pool_size=(2, 2))(img_stack)
         img_stack = Flatten()(img_stack)
-        img_stack = Dropout(0.2)(img_stack)
+        # img_stack = BatchNormalization()(img_stack)
+        # img_stack = Dropout(0.2)(img_stack)
         img_stack = Dense(128, name='rl_dense1', kernel_initializer=random_normal(stddev=0.01))(img_stack)
-        img_stack = BatchNormalization()(img_stack)
-        img_stack = Dense(128, name='rl_dense2', kernel_initializer=random_normal(stddev=0.01))(img_stack)
-        img_stack = BatchNormalization()(img_stack)
-        img_stack = Dense(128, name='rl_dense3', kernel_initializer=random_normal(stddev=0.01))(img_stack)
-        img_stack = BatchNormalization()(img_stack)
+        # img_stack = Dropout(0.2)(img_stack)
+        # img_stack = BatchNormalization()(img_stack)
+        img_stack = Dense(64, name='rl_dense2', kernel_initializer=random_normal(stddev=0.01))(img_stack)
+        # img_stack = Dropout(0.2)(img_stack)
+        # img_stack = BatchNormalization()(img_stack)
+        # img_stack = Dense(128, name='rl_dense3', kernel_initializer=random_normal(stddev=0.01))(img_stack)
+        # img_stack = Dropout(0.2)(img_stack)
+        # img_stack = BatchNormalization()(img_stack)
 
         output = Dense(self.__nb_actions, name='rl_output', kernel_initializer=random_normal(stddev=0.01))(img_stack)
 
@@ -207,5 +212,5 @@ class RlModel():
     # Gets a random state
     # Used during annealing
     def get_random_state(self):
-        return np.random.choice(5, 1)[0]
-        #return np.random.randint(low=0, high=(self.__nb_actions) - 1)
+        # return np.random.choice(5, 1)[0]
+        return np.random.randint(low=0, high=(self.__nb_actions) - 1)

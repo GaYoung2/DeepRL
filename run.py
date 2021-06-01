@@ -9,7 +9,7 @@ import PIL.ImageFilter
 import datetime
 import cv2
 
-MODEL_FILENAME = 'data/bestpoint/handle+static/336724.json'
+MODEL_FILENAME = 'data/bestpoint/model1+5+50+dropout/855301.json'
 random_respawn = False
 
 model = RlModel(None, False)

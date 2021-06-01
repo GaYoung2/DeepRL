@@ -28,7 +28,7 @@ class DistributedAgent():
         self.__max_epoch_runtime_sec = float(30)
         self.__replay_memory_size = 50
         self.__batch_size = 32
-        self.__experiment_name = 'model1+5+100'
+        self.__experiment_name = 'new_reward+handle+nodropout'
         self.__train_conv_layers = False
         self.__epsilon = 1
         self.__percent_full = 0
@@ -57,6 +57,7 @@ class DistributedAgent():
         self.__total_reward = 0
         self.__best_reward = 0
         self.__drive_time = 0
+        self.__random_line_index = -1
         
     def start(self):  
         self.__run_function()
@@ -76,7 +77,8 @@ class DistributedAgent():
             saved_file = open(os.path.join('data/saved_point/',EXPERIENCE_FILENAME), 'rb')
             loaded_file = pkl.load(saved_file)
             self.__experiences = loaded_file[0]
-            self.__epsilon = loaded_file[1]
+            # self.__epsilon = loaded_file[1]
+            self.__epsilon = 0.5
             self.__num_batches_run = loaded_file[2]
             saved_file.close()   
 
@@ -215,7 +217,6 @@ class DistributedAgent():
                 car_state = self.__car_client.getCarState()
                 collision_info = self.__car_client.getCollisionInfo()
                 reward, far_off = self.__compute_reward(collision_info, car_state)
-                
                 # Add the experience to the set of examples from this iteration
                 pre_states.append(pre_state)
                 post_states.append(post_state)
@@ -358,7 +359,7 @@ class DistributedAgent():
         THRESH_DIST = 4.0                # The maximum distance from the center of the road to compute the reward function
         DISTANCE_DECAY_RATE = 1.2        # The rate at which the reward decays for the distance function
         CENTER_SPEED_MULTIPLIER = 2.0    # The ratio at which we prefer the distance reward to the speed reward
-
+        DIRECTION_DECAY_RATE = 7.0       # How decrease faster when orientation is different
         # If the car has collided, the reward is always zero
         if (collision_info.has_collided):
             return 0.0, True
@@ -369,16 +370,18 @@ class DistributedAgent():
             return 0.0, True
         
         #Get the car position
-        position_key = bytes('position', encoding='utf8')
+        position_key = bytes('position', encoding='utf8') #position of x, y
+        orientation_key = bytes('orientation', encoding='utf8') #direction
         x_val_key = bytes('x_val', encoding='utf8')
         y_val_key = bytes('y_val', encoding='utf8')
+        z_val_key = bytes('z_val', encoding='utf8') 
 
         car_point = np.array([car_state.kinematics_true[position_key][x_val_key], car_state.kinematics_true[position_key][y_val_key], 0])
         
         # Distance component is exponential distance to nearest line
         distance = 999
         
-        #Compute the distance to the nearest center line
+        # Compute the distance to the nearest center line
         for line in self.__reward_points:
             local_distance = 0
             length_squared = ((line[0][0]-line[1][0])**2) + ((line[0][1]-line[1][1])**2)
@@ -388,10 +391,47 @@ class DistributedAgent():
                 local_distance = np.linalg.norm(proj - car_point)
             
             distance = min(local_distance, distance)
-            
+        direction = 0
+
+        if self.__random_line_index == 0:
+            if -5< car_state.kinematics_true[position_key][x_val_key] < 8 and -82 < car_state.kinematics_true[position_key][y_val_key] < 48:
+                if -0.7 <= car_state.kinematics_true[orientation_key][z_val_key] <=0:
+                    direction = (0.7 - car_state.kinematics_true[orientation_key][z_val_key])/1.4
+                elif -1 <= car_state.kinematics_true[orientation_key][z_val_key] <=-0.7:
+                    direction = (13/6 + 5*car_state.kinematics_true[orientation_key][z_val_key]/3)
+                elif 0 <= car_state.kinematics_true[orientation_key][z_val_key] <=0.7:
+                    direction = 0.5 - car_state.kinematics_true[orientation_key][z_val_key]*5/7
+                else:
+                    direction = 0
+            elif -120< car_state.kinematics_true[position_key][x_val_key]  < 0 and 40 < car_state.kinematics_true[position_key][y_val_key] < 49:
+                if 0 <= car_state.kinematics_true[orientation_key][z_val_key] <=0.7:
+                    direction = 1 - 5*car_state.kinematics_true[orientation_key][z_val_key]/7
+                elif -0.7 <= car_state.kinematics_true[orientation_key][z_val_key] <=0:
+                    direction = 1 + 5*car_state.kinematics_true[orientation_key][z_val_key]/7
+                else:
+                    direction = 0
+        else:
+            if -120< car_state.kinematics_true[position_key][x_val_key]  < 0 and 40 < car_state.kinematics_true[position_key][y_val_key] < 49:
+                if -1 <= car_state.kinematics_true[orientation_key][z_val_key] <=-0.7:
+                    direction = -2/3 - 5*car_state.kinematics_true[orientation_key][z_val_key]/3
+                elif 0.7 <= car_state.kinematics_true[orientation_key][z_val_key] <=1:
+                    direction = -2/3 + 5*car_state.kinematics_true[orientation_key][z_val_key]/3
+                elif 0 <= car_state.kinematics_true[orientation_key][z_val_key] <=0.7:
+                    direction = car_state.kinematics_true[orientation_key][z_val_key]*5/7
+                else:
+                    direction = 0
+            elif -5< car_state.kinematics_true[position_key][x_val_key] < 8 and -82 < car_state.kinematics_true[position_key][y_val_key] < 48:
+                if 0.7 <= car_state.kinematics_true[orientation_key][z_val_key] <=1:
+                    direction = 13/6 - car_state.kinematics_true[orientation_key][z_val_key]*5/3
+                elif 0 <= car_state.kinematics_true[orientation_key][z_val_key] <=0.7:
+                    direction = 0.5 + car_state.kinematics_true[orientation_key][z_val_key]*5/7
+                else:
+                    direction = 0
         distance_reward = math.exp(-(distance * DISTANCE_DECAY_RATE))
-        
-        return distance_reward, distance > THRESH_DIST
+        direction = abs(direction-1)*DIRECTION_DECAY_RATE 
+        direction_reward =  math.exp(-(direction * DISTANCE_DECAY_RATE))
+        # print(f'distance : {distance_reward}, direction : {direction_reward}')
+        return (distance_reward+direction_reward)/2, distance > THRESH_DIST
 
     def __get_image(self):
         image_response = self.__car_client.simGetImages([ImageRequest(0, AirSimImageType.Scene, False, False)])[0]
@@ -406,7 +446,7 @@ class DistributedAgent():
         car_start_coords = [12961.722656, 6660.329102, 0]
         road = ''
         if not random_respawn:
-            road = 'road_5points.txt'
+            road = 'road_lines.txt'
         else:
             road = 'origin_road_lines.txt'
         with open(os.path.join(os.path.join(self.__data_dir, 'data'), road), 'r') as f:
@@ -439,24 +479,25 @@ class DistributedAgent():
             car_state = self.__car_client.getCarState()
 
             # Pick a random road.
-            random_line_index = np.random.randint(0, high=len(self.__road_points))
+            self.__random_line_index = np.random.randint(0, high=len(self.__road_points))
             # Pick a random position on the road. 
             # Do not start too close to either end, as the car may crash during the initial run.
             
             # added return to origin by Kang 21-03-10
             if not random_respawn:
-                if random_line_index==0:
-                    random_interp = 0.9
-                else:
-                    random_interp = 0.15    # changed by GY 21-03-10
+                random_interp = 0.5
+                # if self.__random_line_index==0:
+                #     random_interp = 0.9
+                # else:
+                #     random_interp = 0.15    # changed by GY 21-03-10
                 # Pick a random direction to face
-                random_direction_interp = 0.4 # changed by GY 21-03-10
+                random_direction_interp = 0.9 # changed by GY 21-03-10
             else:
                 random_interp = (np.random.random_sample() * 0.4) + 0.3 
                 random_direction_interp = np.random.random_sample()
 
             # Compute the starting point of the car
-            random_line = self.__road_points[random_line_index]
+            random_line = self.__road_points[self.__random_line_index]
             random_start_point = list(random_line[0])
             random_start_point[0] += (random_line[1][0] - random_line[0][0])*random_interp
             random_start_point[1] += (random_line[1][1] - random_line[0][1])*random_interp
