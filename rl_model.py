@@ -187,6 +187,7 @@ class RlModel():
         rewards = np.array(batches['rewards'])
         actions = list(batches['actions'])
         if self.__use_speed:
+            throttle_rewards = np.array(batches['throttle_rewards'])
             throttles = list(batches['throttles'])
         is_not_terminal = np.array(batches['is_not_terminal'])
         
@@ -208,7 +209,7 @@ class RlModel():
             q_futures_1_max = np.max(q_futures_1, axis=1)
             q_futures_2_max = np.max(q_futures_2, axis=1)
             q_labels_1 = (q_futures_1_max * is_not_terminal * self.__gamma) + rewards
-            q_labels_2 = (q_futures_2_max * is_not_terminal * self.__gamma) + rewards
+            q_labels_2 = (q_futures_2_max * is_not_terminal * self.__gamma) + throttle_rewards
 
         else:
             q_futures_max = np.max(q_futures, axis=1)
@@ -256,6 +257,9 @@ class RlModel():
 
         with self.__action_context.as_default():
             predicted_qs = self.__action_model.predict([observation])
+            print(predicted_qs[0])
+            print(predicted_qs[1])
+            print('='*30)
         # print('predicted_qs',predicted_qs)
         if use_speed:
             # print('sum of this', sum(sum(predicted_qs[0])))
@@ -264,7 +268,7 @@ class RlModel():
             predicted_state = np.argmax(predicted_qs[0])
             predicted_throttle = np.argmax(predicted_qs[1])
             # return (predicted_state, predicted_qs[0][0][predicted_state])
-            return (predicted_state, predicted_throttle, predicted_qs[0][0][predicted_state])
+            return (predicted_state, predicted_throttle, predicted_qs[0][0][predicted_state],predicted_qs[1][0][predicted_throttle])
         else:
             print('sum of this', sum(sum(predicted_qs)))
             # Select the action with the highest Q value

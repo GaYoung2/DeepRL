@@ -39,7 +39,7 @@ class DistributedAgent():
         self.__max_epoch_runtime_sec = float(50)
         self.__replay_memory_size = 50
         self.__batch_size = 32
-        self.__experiment_name = 'deep+handle+speed+far_reward_penalty_1;1_try1'
+        self.__experiment_name = 'deep+handle+speed+split_reward_try1'
         self.__train_conv_layers = False
         self.__epsilon = 1
         self.__percent_full = 0
@@ -193,7 +193,9 @@ class DistributedAgent():
         pre_states = []
         post_states = []
         rewards = []
+        throttle_rewards=[]
         predicted_rewards = []
+        predicted_throttle_rewards=[]
         car_state = self.__car_client.getCarState()
         #Get the car position
         position_key = bytes('position', encoding='utf8')
@@ -252,10 +254,11 @@ class DistributedAgent():
                     next_state, next_throttle = self.__model.get_random_state()
                     # next_throttle = tuple(np.random.rand(2)+1)
                     predicted_reward = 0
+                    predicted_throttle_reward = 0
                     print('Do random {0}'.format(next_state), end='  ')
                 else:
                     if self.__use_speed:
-                        next_state, next_throttle, predicted_reward = self.__model.predict_state(pre_state,self.__use_speed)
+                        next_state, next_throttle, predicted_reward, predicted_throttle_reward = self.__model.predict_state(pre_state,self.__use_speed)
                     else:
                         next_state, predicted_reward = self.__model.predict_state(pre_state, self.__use_speed)
                     print('Model say {0}'.format(next_state), end='  ')
@@ -315,17 +318,32 @@ class DistributedAgent():
 
                 car_state = self.__car_client.getCarState()
                 collision_info = self.__car_client.getCollisionInfo()
-                reward, far_off = self.__compute_reward(collision_info, car_state)
-                
-                # Add the experience to the set of examples from this iteration
-                pre_states.append(pre_state)
-                post_states.append(post_state)
-                rewards.append(reward)
-                predicted_rewards.append(predicted_reward)
-                actions.append(next_state)
                 if self.__use_speed:
+                    reward, throttle_reward, far_off = self.__compute_reward(collision_info, car_state)
+                    # Add the experience to the set of examples from this iteration
+                    pre_states.append(pre_state)
+                    post_states.append(post_state)
+                    rewards.append(reward)
+                    throttle_rewards.append(throttle_reward)
+                    predicted_rewards.append(predicted_reward)
+                    predicted_throttle_rewards.append(predicted_throttle_reward)
+
+                    actions.append(next_state)
                     throttle.append(next_throttle)
-                self.__total_reward = sum(rewards)
+                    self.__total_reward = sum(rewards) + sum(throttle_rewards)
+
+                else:
+                    reward, far_off = self.__compute_reward(collision_info, car_state)
+                
+                    # Add the experience to the set of examples from this iteration
+                    pre_states.append(pre_state)
+                    post_states.append(post_state)
+                    rewards.append(reward)
+                    predicted_rewards.append(predicted_reward)
+                    predicted_throttle_rewards.append(predicted_throttle_reward)
+
+                    actions.append(next_state)
+                    self.__total_reward = sum(rewards)
 
         # action수가 너무 적을경우, 그 회차의 학습을 진행하지 않음. #added 2021-03-09 by kang
         if len(actions) < 10:
@@ -340,6 +358,9 @@ class DistributedAgent():
         self.__add_to_replay_memory('throttles', throttle)
         self.__add_to_replay_memory('rewards', rewards)
         self.__add_to_replay_memory('predicted_rewards', predicted_rewards)
+        if self.__use_speed:
+            self.__add_to_replay_memory('throttle_rewards', throttle_rewards)
+            self.__add_to_replay_memory('predicted_throttle_rewards', predicted_throttle_rewards)
         self.__add_to_replay_memory('is_not_terminal', is_not_terminal)
 
         print('Percent random actions: {0}'.format(num_random / max(1, len(actions))))
@@ -368,6 +389,7 @@ class DistributedAgent():
         sampled_experiences['actions'] = []
         if self.__use_speed:
             sampled_experiences['throttles'] = []
+            sampled_experiences['throttle_rewards']=[]
         sampled_experiences['rewards'] = []
         sampled_experiences['predicted_rewards'] = []
         sampled_experiences['is_not_terminal'] = []
@@ -388,6 +410,8 @@ class DistributedAgent():
             sampled_experiences['actions'] += [experiences['actions'][i] for i in idx_set]
             if self.__use_speed:
                 sampled_experiences['throttles'] += [experiences['throttles'][i] for i in idx_set]
+                sampled_experiences['throttle_rewards'] += [experiences['throttle_rewards'][i] for i in idx_set]
+
             sampled_experiences['rewards'] += [experiences['rewards'][i] for i in idx_set]
             sampled_experiences['predicted_rewards'] += [experiences['predicted_rewards'][i] for i in idx_set]
             sampled_experiences['is_not_terminal'] += [experiences['is_not_terminal'][i] for i in idx_set]
@@ -539,43 +563,61 @@ class DistributedAgent():
             
             distance = min(local_distance, distance)
         
-        # reward로 넣어줄때 m단위로 넣으면 너무 과적합될것 같아서 km단위로 넣기로 결정.
-        # km단위로 설정시 너무 작아져, 500m단위로 결정.
-        # 위에 방법을 취소하고, Decay_rate만큼을 곱한 distance를 뺀다!
-        # 거리 = 시간 x 속도 (기본단위: m), 500을 나누면서 단위를 500m로 만듦.
-        # 500m 단위로 설정시 너무 reward가 작아셔 음의 reward가 나오는 경우가 존재.
-        # 따라서 100m단위로 수정했음
-        # 몇일동안 해본 결과, 너무 느는 정도가 낮아서, 100m단위가 아닌 m단위를 쓰기로 결정-05_25 by Kang
-        # 다시 500m단위로 수정 --> 다시 100m단위로 수정
-        # 10m단위로 수정했다.
+        # # reward로 넣어줄때 m단위로 넣으면 너무 과적합될것 같아서 km단위로 넣기로 결정.
+        # # km단위로 설정시 너무 작아져, 500m단위로 결정.
+        # # 위에 방법을 취소하고, Decay_rate만큼을 곱한 distance를 뺀다!
+        # # 거리 = 시간 x 속도 (기본단위: m), 500을 나누면서 단위를 500m로 만듦.
+        # # 500m 단위로 설정시 너무 reward가 작아셔 음의 reward가 나오는 경우가 존재.
+        # # 따라서 100m단위로 수정했음
+        # # 몇일동안 해본 결과, 너무 느는 정도가 낮아서, 100m단위가 아닌 m단위를 쓰기로 결정-05_25 by Kang
+        # # 다시 500m단위로 수정 --> 다시 100m단위로 수정
+        # # 10m단위로 수정했다.
+        # curr_drive = (0.05 * max(0, speed))
+        # self.__drive_distance += curr_drive
+        # # 중앙까지 거리를 reward, 즉 양의 값으로 중앙가 가까울 경우 1, 멀경우 0에 가깝게 설정시
+        # # 차량의 속도를 더했을 경우 중앙에 도달하면 멈춰버리는 현상 발생.
+        # # 따라서 중앙에서의 거리를 penalty로 주어보기로 결정. 21-05-16 by Kang
+        # distance_reward = math.exp((distance * DISTANCE_DECAY_RATE))
+        # # 최대 distance_reward는 약 20정도를 갖기 때문에, min-max normalization.
+        # # 최소값은 e의 0제곱인 1, 최대값은 테스트 결과 약 20.6정도로 나왔기 때문에, min=1,max=21로
+        # # min-max 정규화
+        # distance_reward = (distance_reward-1)/(21-1)  # --> 멀면 1, 중앙이면 0에 가까움.
+        # if self.__use_speed:
+        #     # reward를 0 이하로 내려갈 경우 0으로 했는데, 성과가 좋지 않아서 원래대로 음수도 나오도록 다시 설정한다.
+        #     reward = -distance_reward*0.5 + curr_drive*0.5
+        #     # print(f'distance, drive {distance}m, {self.__drive_distance*100}m')
+        #     # print(f'distance reward {distance_reward}')
+        #     # print(f'drive_distance {self.__drive_distance}')
+        #     # print('reward', reward)
+        #     print('distance reward {:.3f}'.format(distance_reward), end='  ')
+        #     print('total reward {:.3f}'.format(np.round(self.__total_reward,3)),end='  ')
+        #     print('drive distance {:.3f}(10m)'.format(np.round(self.__drive_distance,3)), end='  ')
+        #     if notmoved[0] or notmoved[1]:
+        #         print('stopped')
+        #         return 0, distance > THRESH_DIST
+        #     else:
+        #         print()
+        #         return reward, distance > THRESH_DIST
+        # 위의 방법에서 reward를 나누어 주는 방안을 착안.
         curr_drive = (0.05 * max(0, speed))
+        # Assume Max speed is 10
+        speed_reward = curr_drive/(0.5)
         self.__drive_distance += curr_drive
-        # 중앙까지 거리를 reward, 즉 양의 값으로 중앙가 가까울 경우 1, 멀경우 0에 가깝게 설정시
-        # 차량의 속도를 더했을 경우 중앙에 도달하면 멈춰버리는 현상 발생.
-        # 따라서 중앙에서의 거리를 penalty로 주어보기로 결정. 21-05-16 by Kang
-        distance_reward = math.exp((distance * DISTANCE_DECAY_RATE))
-        # 최대 distance_reward는 약 20정도를 갖기 때문에, min-max normalization.
-        # 최소값은 e의 0제곱인 1, 최대값은 테스트 결과 약 20.6정도로 나왔기 때문에, min=1,max=21로
-        # min-max 정규화
-        distance_reward = (distance_reward-1)/(21-1)  # --> 멀면 1, 중앙이면 0에 가까움.
+        center_reward = math.exp(-(distance * DISTANCE_DECAY_RATE))
+        
         if self.__use_speed:
-            # reward를 0 이하로 내려갈 경우 0으로 했는데, 성과가 좋지 않아서 원래대로 음수도 나오도록 다시 설정한다.
-            reward = -distance_reward*0.5 + curr_drive*0.5
-            # print(f'distance, drive {distance}m, {self.__drive_distance*100}m')
-            # print(f'distance reward {distance_reward}')
-            # print(f'drive_distance {self.__drive_distance}')
-            # print('reward', reward)
-            print('distance reward {:.3f}'.format(distance_reward), end='  ')
+            print('current speed {:.3f}'.format(speed), end=' ')
+            print('distance reward {:.3f}'.format(center_reward), end='  ')
             print('total reward {:.3f}'.format(np.round(self.__total_reward,3)),end='  ')
             print('drive distance {:.3f}(10m)'.format(np.round(self.__drive_distance,3)), end='  ')
             if notmoved[0] or notmoved[1]:
                 print('stopped')
-                return 0, distance > THRESH_DIST
+                return center_reward, 0, distance > THRESH_DIST
             else:
                 print()
-                return reward, distance > THRESH_DIST
+                return center_reward, speed_reward, distance > THRESH_DIST
         else:
-            return distance_reward, distance > THRESH_DIST
+            return center_reward, distance > THRESH_DIST
 
     def __get_image(self, use_lane=True):
         image_response = self.__car_client.simGetImages([ImageRequest(0, AirSimImageType.Scene, False, False)])[0]
