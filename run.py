@@ -9,7 +9,7 @@ import PIL.ImageFilter
 import datetime
 import cv2
 
-MODEL_FILENAME = 'data/bestpoint/model1+5+50+dropout/855301.json'
+MODEL_FILENAME = 'data/bestpoint/new_reward+handle+nodropout/67771.json'
 random_respawn = False
 
 model = RlModel(None, False)
@@ -38,7 +38,7 @@ def get_next_starting_point(car_client):
 
     # Get the current state of the vehicle
     car_state = car_client.getCarState()
-
+    global random_line_index
     # Pick a random road.
     random_line_index = np.random.randint(0, high=len(road_points))
     
@@ -46,14 +46,10 @@ def get_next_starting_point(car_client):
     # Do not start too close to either end, as the car may crash during the initial run.
     
     # added return to origin by Kang 21-03-10
-    if not random_respawn:
-        random_interp = 0.15    # changed by GY 21-03-10
+    random_interp = 0.5    # changed by GY 21-03-10
 
-        # Pick a random direction to face
-        random_direction_interp = 0.4 # changed by GY 21-03-10
-    else:
-        random_interp = (np.random.random_sample() * 0.4) + 0.3 
-        random_direction_interp = np.random.random_sample()
+    # Pick a random direction to face
+    random_direction_interp = 0.9 # changed by GY 21-03-10
 
     # Compute the starting point of the car
     random_line = road_points[random_line_index]

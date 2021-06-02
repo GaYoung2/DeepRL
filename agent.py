@@ -28,7 +28,7 @@ class DistributedAgent():
         self.__max_epoch_runtime_sec = float(30)
         self.__replay_memory_size = 50
         self.__batch_size = 32
-        self.__experiment_name = 'new_reward+handle+nodropout'
+        self.__experiment_name = 'new_reward+handle+ 3hidden'
         self.__train_conv_layers = False
         self.__epsilon = 1
         self.__percent_full = 0
@@ -58,7 +58,7 @@ class DistributedAgent():
         self.__best_reward = 0
         self.__drive_time = 0
         self.__random_line_index = -1
-        
+        self.__arive = False
     def start(self):  
         self.__run_function()
         
@@ -95,6 +95,40 @@ class DistributedAgent():
                 else:
                     if (self.__model is not None):
                         experiences, frame_count, self.__drive_time = self.__run_airsim_epoch(False)
+                        if self.__arrive == True:
+                            checkpoint = {}
+                            checkpoint['model'] = self.__model.to_packet(get_target=True)
+                            checkpoint['batch_count'] = frame_count
+                            checkpoint_str = json.dumps(checkpoint)
+                            bestpoint_dir = os.path.join(os.path.join(self.__data_dir, 'bestpoint'), self.__experiment_name)
+                            record_dir = os.path.join(os.path.join(self.__data_dir,'record'),self.__experiment_name)
+                            if not os.path.isdir(bestpoint_dir):
+                                try:
+                                    os.makedirs(bestpoint_dir)
+                                except OSError as e:
+                                    if e.errno != errno.EEXIST:
+                                        raise
+                            file_name = os.path.join(bestpoint_dir,'{0}.json'.format('final_model')) 
+                            saved_file_name = os.path.join(os.path.join(self.__data_dir, 'saved_point'), 'best_model.json')
+                            record_file_name = os.path.join(record_dir,'{0}.txt'.format(self.__num_batches_run))
+                            with open(file_name, 'w') as f:
+                                print('Add Best Policy to {0}'.format(file_name))
+                                f.write(checkpoint_str)
+                            # saving bestpoint model and experiences to saved_point folder by Kang 21-03-12
+                            with open(record_file_name, 'w') as f: #saving information of model by Seo 21-05-03
+                                print('Add info to {0}'.format(record_file_name))
+                                f.write(f'Total reward : {self.__total_reward}\n')
+                                f.write(f'Start Time : {self.__the_start_time}\n')
+                                f.write(f'Epoch Time : {datetime.datetime.utcnow()}')
+                                f.write(f'Drive Time : {self.__drive_time}\n')
+                            with open (saved_file_name, 'w') as f:
+                                f.write(checkpoint_str)
+                            # 처음부터 시작할때 최근의 상태를 알기 위하여 pickle로 experiences, epsilon 저장.   
+                            
+                            save_file = open(os.path.join(os.path.join(self.__data_dir, 'saved_point'), EXPERIENCE_FILENAME),'wb')
+                            pkl.dump([self.__experiences, self.__epsilon, self.__num_batches_run], save_file)
+                            save_file.close()
+                            break
                         # If we didn't immediately crash, train on the gathered experiences
                         if (frame_count > 0):
                             print('Generating {0} minibatches...'.format(frame_count))
@@ -410,6 +444,10 @@ class DistributedAgent():
                     direction = 1 + 5*car_state.kinematics_true[orientation_key][z_val_key]/7
                 else:
                     direction = 0
+            elif car_state.kinematics_true[position_key][y_val_key] < -83:
+                self.__arive = True
+            else:
+                return 0, True
         else:
             if -120< car_state.kinematics_true[position_key][x_val_key]  < 0 and 40 < car_state.kinematics_true[position_key][y_val_key] < 49:
                 if -1 <= car_state.kinematics_true[orientation_key][z_val_key] <=-0.7:
@@ -427,6 +465,10 @@ class DistributedAgent():
                     direction = 0.5 + car_state.kinematics_true[orientation_key][z_val_key]*5/7
                 else:
                     direction = 0
+            elif car_state.kinematics_true[position_key][x_val_key] < -120:
+                self.__arive = True
+            else:
+                return 0, True
         distance_reward = math.exp(-(distance * DISTANCE_DECAY_RATE))
         direction = abs(direction-1)*DIRECTION_DECAY_RATE 
         direction_reward =  math.exp(-(direction * DISTANCE_DECAY_RATE))

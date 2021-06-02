@@ -44,7 +44,7 @@ class RlModel():
         img_stack = Conv2D(32, (3, 3), name='convolution0', padding='same', data_format="channels_last", activation=activation,  kernel_regularizer=l2(1e-4))(pic_input)
         img_stack = MaxPooling2D(pool_size=(2,2))(img_stack)
         img_stack = Conv2D(64, (3, 3), activation=activation, padding='same', data_format="channels_last", name='convolution1',  kernel_regularizer=l2(1e-4))(img_stack)
-        img_stack = MaxPooling2D(pool_size=(2, 2))(img_stack)
+        img_stack = MaxPooling2D(pool_size=(2, 2))(img_stack) 
         img_stack = Conv2D(128, (3, 3), activation=activation, padding='same', data_format="channels_last", name='convolution2',  kernel_regularizer=l2(1e-4))(img_stack)
         img_stack = MaxPooling2D(pool_size=(2, 2))(img_stack)
         img_stack = Flatten()(img_stack)
@@ -56,7 +56,7 @@ class RlModel():
         img_stack = Dense(64, name='rl_dense2', kernel_initializer=random_normal(stddev=0.01))(img_stack)
         # img_stack = Dropout(0.2)(img_stack)
         # img_stack = BatchNormalization()(img_stack)
-        # img_stack = Dense(128, name='rl_dense3', kernel_initializer=random_normal(stddev=0.01))(img_stack)
+        img_stack = Dense(32, name='rl_dense3', kernel_initializer=random_normal(stddev=0.01))(img_stack)
         # img_stack = Dropout(0.2)(img_stack)
         # img_stack = BatchNormalization()(img_stack)
 
