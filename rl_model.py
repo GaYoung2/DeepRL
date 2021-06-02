@@ -1,4 +1,5 @@
 import time
+from keras import regularizers
 import numpy as np
 import json
 import threading
@@ -57,11 +58,11 @@ class RlModel():
         #     pic_input = Input(shape=(59,255,3)) #without handle and lane
         
         
-        img_stack = Conv2D(16, (3, 3), name='convolution0', padding='same', activation=activation, trainable=train_conv_layers)(pic_input)
+        img_stack = Conv2D(32, (3, 3), activation=activation, name='convolution0', padding='same', data_format='channels_last', kernel_regularizer=regularizers.l2(1e-4))(pic_input)
         img_stack = MaxPooling2D(pool_size=(2,2))(img_stack)
-        img_stack = Conv2D(32, (3, 3), activation=activation, padding='same', name='convolution1', trainable=train_conv_layers)(img_stack)
+        img_stack = Conv2D(64, (3, 3), activation=activation, name='convolution1', padding='same', data_format='channels_last', kernel_regularizer=regularizers.l2(1e-4))(img_stack)
         img_stack = MaxPooling2D(pool_size=(2, 2))(img_stack)
-        img_stack = Conv2D(32, (3, 3), activation=activation, padding='same', name='convolution2', trainable=train_conv_layers)(img_stack)
+        img_stack = Conv2D(128, (3, 3), activation=activation, name='convolution2', padding='same', data_format='channels_last', kernel_regularizer=regularizers.l2(1e-4))(img_stack)
         img_stack = MaxPooling2D(pool_size=(2, 2))(img_stack)
         img_stack = Flatten()(img_stack)
         if not run:

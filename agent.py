@@ -39,7 +39,7 @@ class DistributedAgent():
         self.__max_epoch_runtime_sec = float(50)
         self.__replay_memory_size = 50
         self.__batch_size = 32
-        self.__experiment_name = 'deep+handle+speed+far_reward_penalty_1;9'
+        self.__experiment_name = 'deep+handle+speed+far_reward_penalty_1;1_try1'
         self.__train_conv_layers = False
         self.__epsilon = 1
         self.__percent_full = 0
@@ -61,6 +61,7 @@ class DistributedAgent():
         self.__init_reward_points()
         self.__init_handle_images()
         self.__best_drive = 0
+        self.__best_reward = 0
         # self.__best_drive = datetime.timedelta(seconds=-1)  #added 2021-03-09 by kang
         ### removed by Kang 21-05-13 ###
         # self.__best_model = None  #added 2021-03-09 by kang
@@ -432,11 +433,11 @@ class DistributedAgent():
             # 운행시간을 이용해서 가장 오래 걸린 시간을 best policy로 보고, best policy를 따로 저장. #added 2021-03-09 by kang
             # 만약 이번 회차의 운행시간이 가장 긴 운행시간일 경우에 best policy 저장
             # if self.__drive_distance*500 > self.__best_drive and self.__epsilon < 0.5:
-            if self.__total_reward and self.__epsilon < 0.5:
+            if self.__total_reward > self.__best_reward and self.__epsilon < 0.5:
                 print("="*30)
                 print("New Best Policy!!!!!!")
                 print("="*30)
-                self.__best_drive = self.__drive_distance*500
+                self.__best_drive = self.__drive_distance * 10
                 bestpoint_dir = os.path.join(os.path.join(self.__data_dir, 'bestpoint'), self.__experiment_name)
                 record_dir = os.path.join(os.path.join(self.__data_dir,'record'),self.__experiment_name)
                 
@@ -480,6 +481,7 @@ class DistributedAgent():
                 self.__best_model = self.__model
                 self.__best_experiences = self.__experiences
                 self.__best_epsilon = self.__epsilon
+                self.__best_reward = self.__total_reward #best reward를 갱신
             # 고민을 좀 해보자
             # elif self.__epsilon == 0.1:
             #     self.__num_of_trial += 1
@@ -544,8 +546,10 @@ class DistributedAgent():
         # 500m 단위로 설정시 너무 reward가 작아셔 음의 reward가 나오는 경우가 존재.
         # 따라서 100m단위로 수정했음
         # 몇일동안 해본 결과, 너무 느는 정도가 낮아서, 100m단위가 아닌 m단위를 쓰기로 결정-05_25 by Kang
-        # 다시 500m단위로 수정
-        self.__drive_distance += (0.05 * max(0, speed) )/500
+        # 다시 500m단위로 수정 --> 다시 100m단위로 수정
+        # 10m단위로 수정했다.
+        curr_drive = (0.05 * max(0, speed))
+        self.__drive_distance += curr_drive
         # 중앙까지 거리를 reward, 즉 양의 값으로 중앙가 가까울 경우 1, 멀경우 0에 가깝게 설정시
         # 차량의 속도를 더했을 경우 중앙에 도달하면 멈춰버리는 현상 발생.
         # 따라서 중앙에서의 거리를 penalty로 주어보기로 결정. 21-05-16 by Kang
@@ -556,13 +560,14 @@ class DistributedAgent():
         distance_reward = (distance_reward-1)/(21-1)  # --> 멀면 1, 중앙이면 0에 가까움.
         if self.__use_speed:
             # reward를 0 이하로 내려갈 경우 0으로 했는데, 성과가 좋지 않아서 원래대로 음수도 나오도록 다시 설정한다.
-            reward = -distance_reward*0.1 + self.__drive_distance*0.9
+            reward = -distance_reward*0.5 + curr_drive*0.5
             # print(f'distance, drive {distance}m, {self.__drive_distance*100}m')
             # print(f'distance reward {distance_reward}')
             # print(f'drive_distance {self.__drive_distance}')
             # print('reward', reward)
+            print('distance reward {:.3f}'.format(distance_reward), end='  ')
             print('total reward {:.3f}'.format(np.round(self.__total_reward,3)),end='  ')
-            print('drive distance {:.3f}(500m)'.format(np.round(self.__drive_distance,3)), end='  ')
+            print('drive distance {:.3f}(10m)'.format(np.round(self.__drive_distance,3)), end='  ')
             if notmoved[0] or notmoved[1]:
                 print('stopped')
                 return 0, distance > THRESH_DIST
