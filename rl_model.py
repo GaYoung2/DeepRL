@@ -29,8 +29,8 @@ np.set_printoptions(threshold=sys.maxsize)
 # A wrapper class for the DQN model
 class RlModel():
     def __init__(self, weights_path, train_conv_layers):  #false, false
-        self.__angle_values = [-1, -0.5, 0, 0.5, 1]
-        #self.__angle_values = [-0.5, -0.25, 0, 0.25, 0.5] #continuous state
+        # self.__angle_values = [-1, -0.5, 0, 0.5, 1]
+        self.__angle_values = [-0.5, -0.25, 0, 0.25, 0.5] #continuous state
 
         self.__nb_actions = 5 #action의 갯수= angle_values의 갯수
 
@@ -48,18 +48,9 @@ class RlModel():
         img_stack = Conv2D(128, (3, 3), activation=activation, padding='same', data_format="channels_last", name='convolution2',  kernel_regularizer=l2(1e-4))(img_stack)
         img_stack = MaxPooling2D(pool_size=(2, 2))(img_stack)
         img_stack = Flatten()(img_stack)
-        # img_stack = BatchNormalization()(img_stack)
-        # img_stack = Dropout(0.2)(img_stack)
-        img_stack = Dense(128, name='rl_dense1', kernel_initializer=random_normal(stddev=0.01))(img_stack)
-        # img_stack = Dropout(0.2)(img_stack)
-        # img_stack = BatchNormalization()(img_stack)
-        img_stack = Dense(64, name='rl_dense2', kernel_initializer=random_normal(stddev=0.01))(img_stack)
-        # img_stack = Dropout(0.2)(img_stack)
-        # img_stack = BatchNormalization()(img_stack)
-        img_stack = Dense(32, name='rl_dense3', kernel_initializer=random_normal(stddev=0.01))(img_stack)
-        # img_stack = Dropout(0.2)(img_stack)
-        # img_stack = BatchNormalization()(img_stack)
-
+        img_stack = Dense(128, activation=activation, name='rl_dense1', kernel_initializer=random_normal(stddev=0.01))(img_stack)
+        img_stack = Dense(64, activation=activation, name='rl_dense2', kernel_initializer=random_normal(stddev=0.01))(img_stack)
+        img_stack = Dense(32, activation=activation, name='rl_dense3', kernel_initializer=random_normal(stddev=0.01))(img_stack)
         output = Dense(self.__nb_actions, name='rl_output', kernel_initializer=random_normal(stddev=0.01))(img_stack)
 
         opt = Adam()
@@ -204,7 +195,7 @@ class RlModel():
     # Convert the current state to control signals to drive the car.
     # As we are only predicting steering angle, we will use a simple controller to keep the car at a constant speed
     def state_to_control_signals(self, state, car_state):
-        if car_state.speed > 7:
+        if car_state.speed > 8:
             return (self.__angle_values[state], 0, 1)
         else:
             return (self.__angle_values[state], 1, 0)

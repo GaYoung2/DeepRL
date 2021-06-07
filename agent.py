@@ -28,7 +28,7 @@ class DistributedAgent():
         self.__max_epoch_runtime_sec = float(30)
         self.__replay_memory_size = 50
         self.__batch_size = 32
-        self.__experiment_name = 'new_reward+handle+ 3hidden'
+        self.__experiment_name = 'handle+hliddenactivation'
         self.__train_conv_layers = False
         self.__epsilon = 1
         self.__percent_full = 0
@@ -58,7 +58,7 @@ class DistributedAgent():
         self.__best_reward = 0
         self.__drive_time = 0
         self.__random_line_index = -1
-        self.__arive = False
+        self.__arrive = False
     def start(self):  
         self.__run_function()
         
@@ -78,7 +78,7 @@ class DistributedAgent():
             loaded_file = pkl.load(saved_file)
             self.__experiences = loaded_file[0]
             # self.__epsilon = loaded_file[1]
-            self.__epsilon = 0.5
+            self.__epsilon = 0.3
             self.__num_batches_run = loaded_file[2]
             saved_file.close()   
 
@@ -425,55 +425,55 @@ class DistributedAgent():
                 local_distance = np.linalg.norm(proj - car_point)
             
             distance = min(local_distance, distance)
-        direction = 0
+        # direction = 0
 
-        if self.__random_line_index == 0:
-            if -5< car_state.kinematics_true[position_key][x_val_key] < 8 and -82 < car_state.kinematics_true[position_key][y_val_key] < 48:
-                if -0.7 <= car_state.kinematics_true[orientation_key][z_val_key] <=0:
-                    direction = (0.7 - car_state.kinematics_true[orientation_key][z_val_key])/1.4
-                elif -1 <= car_state.kinematics_true[orientation_key][z_val_key] <=-0.7:
-                    direction = (13/6 + 5*car_state.kinematics_true[orientation_key][z_val_key]/3)
-                elif 0 <= car_state.kinematics_true[orientation_key][z_val_key] <=0.7:
-                    direction = 0.5 - car_state.kinematics_true[orientation_key][z_val_key]*5/7
-                else:
-                    direction = 0
-            elif -120< car_state.kinematics_true[position_key][x_val_key]  < 0 and 40 < car_state.kinematics_true[position_key][y_val_key] < 49:
-                if 0 <= car_state.kinematics_true[orientation_key][z_val_key] <=0.7:
-                    direction = 1 - 5*car_state.kinematics_true[orientation_key][z_val_key]/7
-                elif -0.7 <= car_state.kinematics_true[orientation_key][z_val_key] <=0:
-                    direction = 1 + 5*car_state.kinematics_true[orientation_key][z_val_key]/7
-                else:
-                    direction = 0
-            elif car_state.kinematics_true[position_key][y_val_key] < -83:
-                self.__arive = True
-            else:
-                return 0, True
-        else:
-            if -120< car_state.kinematics_true[position_key][x_val_key]  < 0 and 40 < car_state.kinematics_true[position_key][y_val_key] < 49:
-                if -1 <= car_state.kinematics_true[orientation_key][z_val_key] <=-0.7:
-                    direction = -2/3 - 5*car_state.kinematics_true[orientation_key][z_val_key]/3
-                elif 0.7 <= car_state.kinematics_true[orientation_key][z_val_key] <=1:
-                    direction = -2/3 + 5*car_state.kinematics_true[orientation_key][z_val_key]/3
-                elif 0 <= car_state.kinematics_true[orientation_key][z_val_key] <=0.7:
-                    direction = car_state.kinematics_true[orientation_key][z_val_key]*5/7
-                else:
-                    direction = 0
-            elif -5< car_state.kinematics_true[position_key][x_val_key] < 8 and -82 < car_state.kinematics_true[position_key][y_val_key] < 48:
-                if 0.7 <= car_state.kinematics_true[orientation_key][z_val_key] <=1:
-                    direction = 13/6 - car_state.kinematics_true[orientation_key][z_val_key]*5/3
-                elif 0 <= car_state.kinematics_true[orientation_key][z_val_key] <=0.7:
-                    direction = 0.5 + car_state.kinematics_true[orientation_key][z_val_key]*5/7
-                else:
-                    direction = 0
-            elif car_state.kinematics_true[position_key][x_val_key] < -120:
-                self.__arive = True
-            else:
-                return 0, True
+        # if self.__random_line_index == 0:
+        #     if -5< car_state.kinematics_true[position_key][x_val_key] < 8 and -82 < car_state.kinematics_true[position_key][y_val_key] < 48:
+        #         if -0.7 <= car_state.kinematics_true[orientation_key][z_val_key] <=0:
+        #             direction = (0.7 - car_state.kinematics_true[orientation_key][z_val_key])/1.4
+        #         elif -1 <= car_state.kinematics_true[orientation_key][z_val_key] <=-0.7:
+        #             direction = (13/6 + 5*car_state.kinematics_true[orientation_key][z_val_key]/3)
+        #         elif 0 <= car_state.kinematics_true[orientation_key][z_val_key] <=0.7:
+        #             direction = 0.5 - car_state.kinematics_true[orientation_key][z_val_key]*5/7
+        #         else:
+        #             direction = 0
+        #     elif -120< car_state.kinematics_true[position_key][x_val_key]  < 0 and 40 < car_state.kinematics_true[position_key][y_val_key] < 49:
+        #         if 0 <= car_state.kinematics_true[orientation_key][z_val_key] <=0.7:
+        #             direction = 1 - 5*car_state.kinematics_true[orientation_key][z_val_key]/7
+        #         elif -0.7 <= car_state.kinematics_true[orientation_key][z_val_key] <=0:
+        #             direction = 1 + 5*car_state.kinematics_true[orientation_key][z_val_key]/7
+        #         else:
+        #             direction = 0
+        #     elif car_state.kinematics_true[position_key][y_val_key] < -83:
+        #         self.__arrive = True
+        #     else:
+        #         return 0, True
+        # else:
+        #     if -120< car_state.kinematics_true[position_key][x_val_key]  < 0 and 40 < car_state.kinematics_true[position_key][y_val_key] < 49:
+        #         if -1 <= car_state.kinematics_true[orientation_key][z_val_key] <=-0.7:
+        #             direction = -2/3 - 5*car_state.kinematics_true[orientation_key][z_val_key]/3
+        #         elif 0.7 <= car_state.kinematics_true[orientation_key][z_val_key] <=1:
+        #             direction = -2/3 + 5*car_state.kinematics_true[orientation_key][z_val_key]/3
+        #         elif 0 <= car_state.kinematics_true[orientation_key][z_val_key] <=0.7:
+        #             direction = car_state.kinematics_true[orientation_key][z_val_key]*5/7
+        #         else:
+        #             direction = 0
+        #     elif -5< car_state.kinematics_true[position_key][x_val_key] < 8 and -82 < car_state.kinematics_true[position_key][y_val_key] < 48:
+        #         if 0.7 <= car_state.kinematics_true[orientation_key][z_val_key] <=1:
+        #             direction = 13/6 - car_state.kinematics_true[orientation_key][z_val_key]*5/3
+        #         elif 0 <= car_state.kinematics_true[orientation_key][z_val_key] <=0.7:
+        #             direction = 0.5 + car_state.kinematics_true[orientation_key][z_val_key]*5/7
+        #         else:
+        #             direction = 0
+        #     elif car_state.kinematics_true[position_key][x_val_key] < -120:
+        #         self.__arrive = True
+        #     else:
+        #         return 0, True
         distance_reward = math.exp(-(distance * DISTANCE_DECAY_RATE))
-        direction = abs(direction-1)*DIRECTION_DECAY_RATE 
-        direction_reward =  math.exp(-(direction * DISTANCE_DECAY_RATE))
+        # direction = abs(direction-1)*DIRECTION_DECAY_RATE 
+        # direction_reward =  math.exp(-(direction * DISTANCE_DECAY_RATE))
         # print(f'distance : {distance_reward}, direction : {direction_reward}')
-        return (distance_reward+direction_reward)/2, distance > THRESH_DIST
+        return distance_reward, distance > THRESH_DIST
 
     def __get_image(self):
         image_response = self.__car_client.simGetImages([ImageRequest(0, AirSimImageType.Scene, False, False)])[0]
@@ -527,7 +527,7 @@ class DistributedAgent():
             
             # added return to origin by Kang 21-03-10
             if not random_respawn:
-                random_interp = 0.5
+                random_interp = 0.7
                 # if self.__random_line_index==0:
                 #     random_interp = 0.9
                 # else:
