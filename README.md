@@ -24,23 +24,23 @@ Lane detection의 결과 부적합
 <a href = "https://github.com/kangshwan">
   <img src="https://avatars.githubusercontent.com/u/46666296?v=4" alt="seunghwan" width="80" style="max-width:100%" />
 </a>
-<a href = "https://github.com/seowoobean">
-  <img src="https://avatars.githubusercontent.com/u/62785446?v=4" alt="woobean" width="80" style="max-width:100%" />
+<a href = "https://github.com/cjw9506">
+  <img src="https://avatars.githubusercontent.com/u/63503519?v=4" alt="ㅓiwon" width="80" style="max-width:100%" />
 </a>
-<a href = "https://github.com/GaYoung2">
-  <img src="https://avatars.githubusercontent.com/u/62061144?v=4" alt="gayoung" width="80" style="max-width:100%" />
+<a href = "https://github.com/JungSoonIn">
+  <img src="https://avatars.githubusercontent.com/u/64190835?v=4" alt="soonin" width="80" style="max-width:100%" />
 </a>
 <table class="tg">
 <tbody>
     <tr>
         <td>강승환</td>
-        <td>서우빈</td>
-        <td>김가영</td>
+        <td>정지원</td>
+        <td>정순인</td>
     </tr>
     <tr>
-        <td><a href="https://github.com/4z7l">@4z7l</a></td>
-        <td><a href="https://github.com/seowoobean">@sgh002400</a></td>
-        <td><a href="https://github.com/GaYoung2">@mdb1217</a></td>
+        <td><a href="https://github.com/kangshwan">@kangshwan</a></td>
+        <td><a href="https://github.com/cjw9506">@cjw9506</a></td>
+        <td><a href="https://github.com/JungSoonIn">@JungsoonIn</a></td>
     </tr>
 </tbody>
 </table>
